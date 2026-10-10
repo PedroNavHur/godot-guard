@@ -3,7 +3,8 @@
 set -eu
 guard=.venv/bin/godot-guard
 [ -x "$guard" ] || guard=godot-guard
-if command -v host-check >/dev/null 2>&1; then
+# host-check refuses nested calls, so a hook already inside its job runs directly.
+if [ "${HOST_CHECK_ACTIVE:-}" != 1 ] && command -v host-check >/dev/null 2>&1; then
   exec host-check "$guard" gate --fast --staged
 fi
 exec "$guard" gate --fast --staged

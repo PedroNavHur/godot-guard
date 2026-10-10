@@ -198,13 +198,16 @@ directory), then PATH.
 set -eu
 guard=.venv/bin/godot-guard
 [ -x "$guard" ] || guard=godot-guard
-if command -v host-check >/dev/null 2>&1; then
+# host-check refuses nested calls, so a hook already inside its job runs directly.
+if [ "${HOST_CHECK_ACTIVE:-}" != 1 ] && command -v host-check >/dev/null 2>&1; then
   exec host-check "$guard" gate --fast --staged
 fi
 exec "$guard" gate --fast --staged
 ```
 
-`.githooks/pre-push`: the same with `gate` (full). `init` runs
+host-check sets `HOST_CHECK_ACTIVE=1` for its job and refuses to nest, so a
+commit or push that already runs inside a host-check job calls the guard
+directly. `.githooks/pre-push`: the same with `gate` (full). `init` runs
 `git config core.hooksPath .githooks` and says so.
 
 `.github/workflows/quality.yml`: checkout, setup-python 3.12,
