@@ -43,6 +43,7 @@ godot-guard run -- ARGS...          # Godot; fails on ERROR:, WARNING:, SCRIPT E
 godot-guard gate [--fast] [--staged | FILE...]
 ```
 
+A directory argument stands for the scanned scripts below it.
 `gate --fast --staged` is the pre-commit hook: gdformat, gdlint, and `check` on
 staged scripts. `gate` is the pre-push hook and CI: format, lint, check, extra
 steps, editor import, analyzer, tests, and a smoke run, timed per step.

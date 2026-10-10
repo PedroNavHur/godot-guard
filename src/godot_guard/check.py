@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import baseline
-from .config import BASELINE_NAME, Config
+from .config import BASELINE_NAME, Config, walk_scripts
 from .rules import FileResult, Problem, Surfaces, analyze
 
 
@@ -13,14 +13,16 @@ def select(config: Config, files: list[str]) -> list[str]:
     """Repo-relative scanned scripts among `files` (paths relative to the working directory)."""
     chosen = set()
     for name in files:
-        path = Path(name).resolve()
-        try:
-            relative = path.relative_to(config.root).as_posix()
-        except ValueError:
-            continue
-        if path.is_file() and config.is_scanned(relative):
-            chosen.add(relative)
+        chosen.update(expand(config, Path(name).resolve()))
     return sorted(chosen)
+
+
+def expand(config: Config, path: Path) -> list[str]:
+    """Scanned scripts at `path`: the file itself, or every one below a directory."""
+    inside = path == config.root or config.root in path.parents
+    if not inside or not path.exists():
+        return []
+    return [relative for relative in walk_scripts(config.root, path) if config.is_scanned(relative)]
 
 
 def measure(config: Config, paths: list[str]) -> list[FileResult]:

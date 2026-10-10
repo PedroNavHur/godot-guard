@@ -167,7 +167,9 @@ Run from anywhere inside the repo; the root is the nearest directory holding
 `.godot-guard.yml` (fall back to `project.godot`, with default config).
 
 - `godot-guard check [FILE...]`: run the rules on the given `.gd` files (or
-  every scanned file), against the baseline. Exit 1 on any error; warnings
+  every scanned file), against the baseline. Here and in `format` and `gate`,
+  a directory argument stands for the scanned scripts below it (hidden
+  directories and `exclude` matches skipped). Exit 1 on any error; warnings
   print but exit 0. End with a one-line summary: errors, warnings, files.
 - `godot-guard baseline [--init [--force]]`: as above.
 - `godot-guard format [FILE...]`: `gdformat` in write mode on the files or

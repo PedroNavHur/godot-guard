@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from godot_guard import gate as gate_module
-from godot_guard.cli import main
+from godot_guard.cli import format_files, main
 from godot_guard.tools import ToolError, godot, run_godot
 
 from .helpers import Repo, captured
@@ -104,6 +104,24 @@ class FullGateTest(ShimTest):
         status, output = captured(gate_module.gate, self.repo.config(), False, False, [])
         self.assertEqual(status, 1)
         self.assertIn("== import failed", output)
+
+
+class DirectoryArgumentTest(ShimTest):
+    def setUp(self):
+        super().setUp()
+        for name in ("scripts/d.gd", "scripts/gen/e.gd", "scripts/.hidden/f.gd", "scripts/notes.txt"):
+            self.repo.write(name, CLEAN)
+        self.repo.write(".godot-guard.yml", "paths: [.]\nexclude: [scripts/gen]\n")
+
+    def test_format_expands_directories(self):
+        status, output = captured(format_files, self.repo.config(), [str(self.repo.root / "scripts"), str(self.repo.root / "a.gd")])
+        self.assertEqual(status, 0, output)
+        self.assertEqual(self.calls(), ["gdformat a.gd scripts/d.gd"])
+
+    def test_fast_gate_expands_directories(self):
+        status, output = captured(gate_module.gate, self.repo.config(), True, False, [str(self.repo.root / "scripts")])
+        self.assertEqual(status, 0, output)
+        self.assertEqual(self.calls(), ["gdformat --check scripts/d.gd", "gdlint scripts/d.gd"])
 
 
 class RunTest(ShimTest):
