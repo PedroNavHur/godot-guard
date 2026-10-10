@@ -76,6 +76,17 @@ class BoundaryTest(unittest.TestCase):
         other = analyze(config, "scripts/ui/view.gd", surfaces).problems
         self.assertEqual([p for p in other if p.rule == "boundary"], [])
 
+    def test_hash_inside_a_string_is_not_a_comment(self):
+        source = (
+            'extends Node\n\n\nfunc f():\n\tvar a = get_node("#") as Sprite3D\n'
+            "\tvar b = '#' # Sprite3D in a comment\n\tvar c = get_node(&\"x#\") as Sprite3D\n"
+            '\tvar d = "\\"#" + str(Sprite3D)\n\tvar e = """\n# text\n"""  # Sprite3D\n\treturn Sprite3D\n'
+        )
+        repo = Repo({"sim.gd": source}, "boundaries:\n  - name: domain\n    paths: ['**']\n    forbid: ['\\bSprite3D\\b']\n")
+        self.addCleanup(repo.cleanup)
+        hits = [p for p in analyze(repo.config(), "sim.gd", Surfaces(repo.root)).problems if p.rule == "boundary"]
+        self.assertEqual([p.line for p in hits], [5, 7, 8, 12])
+
 
 class ParseErrorTest(unittest.TestCase):
     def test_unparsable_file_is_one_error(self):

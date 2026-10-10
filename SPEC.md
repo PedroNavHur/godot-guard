@@ -120,8 +120,9 @@ the details).
       message: simulation code must not reference presentation
   ```
 
-  Each code line (comments stripped) in a matching file is searched for each
-  pattern. Not baselined: existing hits must be fixed before adoption.
+  Each code line (comments stripped; a `#` inside a string, including
+  `&""` and `^""` literals and triple-quoted strings, is not a comment) in a
+  matching file is searched for each pattern. String contents are searched. Not baselined: existing hits must be fixed before adoption.
   hexstead's `domain-boundary` rule moves here unchanged.
 
 ## Ratchet baseline: `.godot-guard-baseline.json`

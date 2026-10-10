@@ -123,7 +123,7 @@ def comment_item(config: Config, path: str, source: str) -> Item:
 
 
 def boundary_problems(config: Config, path: str, source: str) -> list[Problem]:
-    lines = [raw.split("#", 1)[0] for raw in source.splitlines()]
+    lines = comments.strip_comments(source).splitlines()
     problems = []
     for entry in config.boundaries:
         if matches(path, entry["paths"]):

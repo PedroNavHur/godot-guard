@@ -20,6 +20,12 @@ REFERENCE = re.compile(r"^(see:?\s+)?(https?://\S+|[\w.-]*/[\w./#-]+|[A-Z][A-Z0-
 SEPARATOR = re.compile(r"^[-=*#/_~+]{3,}$")
 LICENSE = re.compile(r"SPDX-License-Identifier|Copyright \(c\)|Copyright \d{4}|Licensed under", re.IGNORECASE)
 PREAMBLE = re.compile(r"^(extends\b|class_name\b|@tool\b|@icon\b|##|$)")
+# Strings first, so a `#` inside one (including &"" and ^"" literals) is not a comment.
+CODE_TOKEN = re.compile(
+    r'"""(?:\\.|[^\\])*?(?:"""|\Z)|\'\'\'(?:\\.|[^\\])*?(?:\'\'\'|\Z)'
+    r'|"(?:\\.|[^"\\\n])*(?:"|$)|\'(?:\\.|[^\'\\\n])*(?:\'|$)|#[^\n]*',
+    re.M | re.S,
+)
 
 
 @dataclass
@@ -83,3 +89,8 @@ def long_comments(source: str, cap: int) -> list[Comment]:
 def code_lines(source: str) -> int:
     """Lines that are neither blank nor comment-only."""
     return sum(1 for raw in source.splitlines() if raw.strip() and not raw.strip().startswith("#"))
+
+
+def strip_comments(source: str) -> str:
+    """The source with every comment removed and strings and line breaks kept."""
+    return CODE_TOKEN.sub(lambda m: "" if m.group().startswith("#") else m.group(), source)
