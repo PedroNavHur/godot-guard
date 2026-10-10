@@ -109,6 +109,12 @@ qualified with `.`: `Inner.method`, `speed.set`, and `outer.<lambda#2>` for the
 second anonymous lambda in `outer`. A name repeated in one file is numbered on
 every occurrence (`f#1`, `f#2`).
 
+These keys are positional, so inserting, removing, or reordering a lambda (or a
+same-named one) ahead of a baselined lambda renames its key, and `check` reports
+the old entry as stale and the lambda as a new violation. Fix it by refactoring
+the lambda below the limit, or by renaming the entry's key in the baseline by
+hand.
+
 Boundary hits and nested ternaries are never baselined.
 
 ## Development
