@@ -10,8 +10,14 @@ func _initialize() -> void:
 	var excludes: Array[String] = []
 	_read_arguments(roots, excludes)
 	var paths: Array[String] = []
+	var missing := 0
 	for root_path: String in roots:
-		_collect(root_path, excludes, paths)
+		if not _collect_root(root_path, excludes, paths):
+			missing += 1
+			printerr("ANALYZER: root %s does not exist" % root_path)
+	if paths.is_empty():
+		missing += 1
+		printerr("ANALYZER: no scripts under %s" % ", ".join(roots))
 	paths.sort()
 	var failed := 0
 	for path: String in paths:
@@ -20,7 +26,7 @@ func _initialize() -> void:
 			failed += 1
 			printerr("ANALYZER: failed to load %s" % path)
 	print("Analyzed %d scripts, %d failed to load." % [paths.size(), failed])
-	quit(1 if failed > 0 else 0)
+	quit(1 if failed + missing > 0 else 0)
 
 
 func _read_arguments(roots: Array[String], excludes: Array[String]) -> void:
@@ -32,6 +38,16 @@ func _read_arguments(roots: Array[String], excludes: Array[String]) -> void:
 			excludes.append("res://" + arguments[index + 1])
 	if roots.is_empty():
 		roots.append("res://")
+
+
+func _collect_root(root_path: String, excludes: Array[String], paths: Array[String]) -> bool:
+	if FileAccess.file_exists(root_path):
+		_add_entry(root_path, false, excludes, paths)
+		return true
+	if DirAccess.dir_exists_absolute(root_path):
+		_collect(root_path, excludes, paths)
+		return true
+	return false
 
 
 func _collect(directory: String, excludes: Array[String], paths: Array[String]) -> void:

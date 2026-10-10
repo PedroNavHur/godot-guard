@@ -9,7 +9,7 @@ from unittest import mock
 
 from godot_guard import gate as gate_module
 from godot_guard.cli import main
-from godot_guard.tools import run_godot
+from godot_guard.tools import ToolError, godot, run_godot
 
 from .helpers import Repo, captured
 
@@ -121,6 +121,41 @@ class RunTest(ShimTest):
         self.assertEqual(self.calls(), ["godot --headless --version"])
         self.shim("godot", status=3)
         self.assertEqual(captured(run_godot, [])[0], 3)
+
+
+def real_godot() -> str | None:
+    try:
+        return godot()
+    except ToolError:
+        return None
+
+
+@unittest.skipUnless(real_godot(), "Godot 4 not found")
+class AnalyzerTest(unittest.TestCase):
+    """The packaged analyzer script under a real headless Godot."""
+
+    def setUp(self):
+        self.repo = Repo({"a.gd": CLEAN, "scripts/b.gd": CLEAN, "empty/notes.txt": ""})
+        self.addCleanup(self.repo.cleanup)
+
+    def analyze(self, *roots: str) -> tuple[int, str]:
+        args = [arg for root in roots for arg in ("--root", root)]
+        return captured(run_godot, ["--headless", "--path", str(self.repo.root), "--script", str(gate_module.ANALYZER), "--", *args])
+
+    def test_file_roots_are_analyzed(self):
+        status, output = self.analyze("res://a.gd")
+        self.assertEqual(status, 0, output)
+        self.assertIn("Analyzed 1 scripts, 0 failed to load.", output)
+
+    def test_missing_root_fails(self):
+        status, output = self.analyze("res://missing", "res://a.gd")
+        self.assertEqual(status, 1, output)
+        self.assertIn("ANALYZER: root res://missing does not exist", output)
+
+    def test_roots_without_scripts_fail(self):
+        status, output = self.analyze("res://empty")
+        self.assertEqual(status, 1, output)
+        self.assertIn("ANALYZER: no scripts under res://empty", output)
 
 
 if __name__ == "__main__":

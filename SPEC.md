@@ -189,7 +189,9 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     `tools/lint_gdscript.gd` does. Ship that script as package data and
     run it without writing into the repository; verify how Godot 4.7.1
     accepts a script outside `res://` (an absolute `--script` path, or a copy
-    under `.godot/`, which git ignores). Pass the scanned roots to it.
+    under `.godot/`, which git ignores). Pass the scanned roots to it. A root
+    may be a directory or a `.gd` file; a root that does not exist, or roots
+    that yield no scripts in total, fail the step.
 - `godot-guard init`: scaffold a repo: `.godot-guard.yml` (defaults with the
   detected test script if `tests/run_tests.gd` exists), the two hooks, the
   CI workflow, and a `tools/requirements-lint.txt` line. Never overwrite an
