@@ -45,13 +45,18 @@ class FileResult:
 
 
 class Surfaces:
-    """Interface surfaces of every script in the repository, for the Resource exclusion."""
+    """Interface surfaces of every script under the roots, for the Resource exclusion.
 
-    def __init__(self, root: Path):
+    A later root's script replaces an earlier root's at the same relative path; unreadable scripts are skipped.
+    """
+
+    def __init__(self, *roots: Path):
         self.by_path = {}
-        for relative in walk_scripts(root, root):
-            source = (root / relative).read_text(encoding="utf-8", errors="replace")
-            self.by_path[relative] = interface.parse(relative, source)
+        for root in roots:
+            for relative in walk_scripts(root, root):
+                source = read_script(root / relative)
+                if source is not None:
+                    self.by_path[relative] = interface.parse(relative, source)
         self.by_class = {s.class_name: s for s in self.by_path.values() if s.class_name}
 
     def surface(self, relative: str, source: str) -> interface.Surface | None:
@@ -61,6 +66,14 @@ class Surfaces:
         if interface.is_resource(surface, self.by_class, self.by_path):
             return None
         return surface
+
+
+def read_script(path: Path) -> str | None:
+    """The script's text, or None for a dangling symlink, a directory, or an unreadable file."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 def parse_tree(source: str):

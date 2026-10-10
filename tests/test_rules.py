@@ -56,6 +56,16 @@ class InterfaceTest(unittest.TestCase):
         self.assertNotIn("interface-cap", [i.rule for i in sword.items])
         self.assertEqual([i.value for i in wide.items if i.rule == "interface-cap"], [11])
 
+    def test_later_roots_override_and_dangling_links_are_skipped(self):
+        working = Repo({"base.gd": "class_name Base\nextends Resource\n", "other.gd": "extends Node\n"})
+        staged = Repo({"base.gd": "class_name Base\nextends Node\n"})
+        for repo in (working, staged):
+            self.addCleanup(repo.cleanup)
+        (working.root / "dangling.gd").symlink_to("missing.txt")
+        surfaces = Surfaces(working.root, staged.root)
+        self.assertEqual(sorted(surfaces.by_path), ["base.gd", "other.gd"])
+        self.assertEqual(surfaces.by_class["Base"].extends, "Node")
+
 
 class BoundaryTest(unittest.TestCase):
     def test_forbidden_patterns_in_matching_paths(self):

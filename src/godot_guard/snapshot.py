@@ -1,4 +1,4 @@
-"""The staged scripts as they will be committed, exported from the git index for the pre-commit gate."""
+"""The selected staged scripts as they will be committed, exported from the git index for the pre-commit gate."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from .config import BASELINE_NAME, Config
 
 # Each tool takes the first of its names found from the working directory upward.
 TOOL_CONFIGS = (("gdlintrc", ".gdlintrc"), ("gdformatrc", ".gdformatrc"))
+SYMLINK_MODE = "120000"
 
 
 def git(config: Config, *args: str, stdin: str | None = None) -> str:
@@ -22,9 +23,16 @@ def git(config: Config, *args: str, stdin: str | None = None) -> str:
 
 
 def staged(config: Config) -> list[str]:
-    """Scanned scripts added, copied, modified, or renamed in the index, relative to the root."""
+    """Scanned scripts added, copied, modified, or renamed in the index, relative to the root.
+
+    A staged symlink has no content of its own to check, so it is left out.
+    """
     names = git(config, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--relative", "-z").split("\0")
-    return sorted(name for name in names if config.is_scanned(name))
+    scanned = [name for name in names if config.is_scanned(name)]
+    if not scanned:
+        return []
+    entries = git(config, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *scanned).split("\0")
+    return sorted({entry.split("\t", 1)[1] for entry in entries if entry and not entry.startswith(SYMLINK_MODE)})
 
 
 def nearest(start: Path, names: tuple[str, ...]) -> Path | None:
@@ -44,8 +52,8 @@ def copy_tool_configs(source: Path, target: Path) -> None:
 
 
 @contextmanager
-def snapshot(config: Config):
-    """A config rooted in a temporary copy of the index's scripts and baseline, plus the tool configs.
+def snapshot(config: Config, chosen: list[str]):
+    """A config rooted in a temporary copy of the index's `chosen` scripts and baseline, plus the tool configs.
 
     The baseline falls back to the working tree's when the index has none.
     """
@@ -53,10 +61,11 @@ def snapshot(config: Config):
     with tempfile.TemporaryDirectory() as temp:
         base = Path(temp).resolve()
         root = base / config.root.relative_to(top)
-        listed = git(config, "ls-files", "-z", "--", "*.gd", BASELINE_NAME)
+        tracked = git(config, "ls-files", "-z", "--", BASELINE_NAME).split("\0")
+        listed = "\0".join([*chosen, *(name for name in tracked if name)])
         git(config, "checkout-index", "-z", "--stdin", f"--prefix={base}/", stdin=listed)
         root.mkdir(parents=True, exist_ok=True)
         copy_tool_configs(config.root, root)
-        if BASELINE_NAME not in listed.split("\0") and config.baseline_path.is_file():
+        if BASELINE_NAME not in tracked and config.baseline_path.is_file():
             shutil.copy(config.baseline_path, root / BASELINE_NAME)
         yield dataclasses.replace(config, root=root)

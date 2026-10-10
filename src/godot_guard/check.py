@@ -25,8 +25,8 @@ def expand(config: Config, path: Path) -> list[str]:
     return [relative for relative in walk_scripts(config.root, path) if config.is_scanned(relative)]
 
 
-def measure(config: Config, paths: list[str]) -> list[FileResult]:
-    surfaces = Surfaces(config.root)
+def measure(config: Config, paths: list[str], surfaces: Surfaces | None = None) -> list[FileResult]:
+    surfaces = surfaces or Surfaces(config.root)
     return [analyze(config, path, surfaces) for path in paths]
 
 
@@ -42,11 +42,14 @@ def problems_of(config: Config, results: list[FileResult], subset: set[str] | No
     return problems
 
 
-def check(config: Config, files: list[str] | None = None) -> int:
-    """Run the rules on `files` (every scanned script when None); 1 on any error."""
+def check(config: Config, files: list[str] | None = None, surfaces: Surfaces | None = None) -> int:
+    """Run the rules on `files` (every scanned script when None); 1 on any error.
+
+    `surfaces` is the Resource map, read from the root's scripts when None.
+    """
     paths = config.scanned_files() if files is None else select(config, files)
     subset = None if files is None else set(paths)
-    problems = problems_of(config, measure(config, paths), subset)
+    problems = problems_of(config, measure(config, paths, surfaces), subset)
     for problem in sorted(problems, key=lambda p: (p.path, p.line, p.rule)):
         prefix = "warning: " if problem.level == "warn" else ""
         print(f"{problem.path}:{problem.line}: {prefix}{problem.message} ({problem.rule})")

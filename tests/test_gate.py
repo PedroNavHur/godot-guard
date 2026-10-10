@@ -108,13 +108,44 @@ class StagedContentTest(ShimTest):
         status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
         self.assertEqual(status, 0, output)
 
-    def test_resource_exclusion_reads_the_index(self):
+    def test_resource_exclusion_reads_the_index_for_selected_scripts(self):
         self.stage("base.gd", "class_name Base\nextends Node\n", "class_name Base\nextends Resource\n")
-        git(self.repo.root, "commit", "-qm", "base")
         self.stage("wide.gd", WIDE, WIDE)
         status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
         self.assertEqual(status, 1)
         self.assertIn("wide.gd:1: 9 inputs (@export 9) (max 8) (interface-cap)", output)
+
+    def test_resource_exclusion_reads_the_working_tree_for_unselected_scripts(self):
+        source = self.repo.root / ".source"
+        source.mkdir()
+        (source / "base.gd").write_text("class_name Base\nextends Resource\n")
+        git(source, "init", "-q")
+        git(source, "add", "base.gd")
+        git(source, "commit", "-qm", "base")
+        git(self.repo.root, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(source), "vendor")
+        self.stage("wide.gd", WIDE, WIDE)
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 0, output)
+        self.assertIn("0 errors, 0 warnings, 1 file", output)
+
+    def test_unchanged_symlink_to_a_non_script_is_ignored(self):
+        self.repo.write("target.txt", CLEAN)
+        (self.repo.root / "alias.gd").symlink_to("target.txt")
+        git(self.repo.root, "add", "target.txt", "alias.gd")
+        git(self.repo.root, "commit", "-qm", "alias")
+        self.stage("a.gd", CLEAN, CLEAN)
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 0, output)
+        self.assertIn("0 errors, 0 warnings, 1 file", output)
+
+    def test_staged_symlink_is_not_selected(self):
+        self.stage("target.gd", CLEAN, CLEAN)
+        git(self.repo.root, "commit", "-qm", "target")
+        (self.repo.root / "alias.gd").symlink_to("target.gd")
+        git(self.repo.root, "add", "alias.gd")
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 0, output)
+        self.assertIn("no GDScript files selected", output)
 
     def test_baseline_comes_from_the_index(self):
         self.stage("wide.gd", WIDE.replace("Base", "Node"), WIDE.replace("Base", "Node"))

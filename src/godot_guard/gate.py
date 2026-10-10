@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .check import check, select
 from .config import Config
+from .rules import Surfaces
 from .snapshot import snapshot, staged
 from .tools import ToolError, gdtoolkit, run_godot
 
@@ -52,7 +53,7 @@ def steps_for(
         steps.append(("format", lambda: gdtool("gdformat", ["--check"], files, sources)))
     if gate["lint"]:
         steps.append(("lint", lambda: gdtool("gdlint", [], files, sources)))
-    steps.append(("check", lambda: check(sources, absolute(sources, chosen))))
+    steps.append(("check", lambda: check(sources, absolute(sources, chosen), resource_map(config, sources))))
     if fast:
         return steps
     for command in gate["steps"]:
@@ -61,6 +62,13 @@ def steps_for(
     for name, args in godot_steps(config):
         steps.append((name, lambda a=args: run_godot(["--headless", "--path", root, *a])))
     return steps
+
+
+def resource_map(config: Config, sources: Config) -> Surfaces | None:
+    """The working tree's scripts overlaid with the snapshot's, when the scripts come from a snapshot."""
+    if sources is config:
+        return None
+    return Surfaces(config.root, sources.root)
 
 
 def run_steps(steps: list[tuple[str, object]]) -> int:
@@ -102,5 +110,5 @@ def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:
     chosen = staged(config)
     if not chosen:
         return run_gate(config, chosen, fast)
-    with snapshot(config) as sources:
+    with snapshot(config, chosen) as sources:
         return run_gate(config, chosen, fast, sources)

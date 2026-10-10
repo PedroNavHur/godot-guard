@@ -183,12 +183,17 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     selected files only. `--staged` selects the scanned `.gd` files added,
     copied, modified, or renamed in the index (`git diff --cached --name-only
     --diff-filter=ACMR`), including ones since deleted from the working tree,
-    and checks what will be committed: the index's scripts and baseline (the
+    and checks what will be committed. A staged symlink is not selected: it
+    has no content of its own, and its target is checked when it is staged.
+    The index's content of the selected scripts and the index's baseline (the
     working tree's baseline when the index has none) are exported to a
     temporary copy of the root, with the gdlint and gdformat configs the tools
-    would find from the root. gdformat, gdlint, and the rules run there, the
-    Resource exclusion reads the index's `extends`/`class_name` map, and paths
-    print repo-relative. Nothing selected means nothing to do, exit 0.
+    would find from the root. gdformat, gdlint, and the rules run there, and
+    paths print repo-relative. The Resource exclusion's
+    `extends`/`class_name` map reads the working tree for every other script
+    (submodules included) and the exported content for the selected ones; a
+    script it cannot read, such as a dangling symlink, is left out of the map.
+    Nothing selected means nothing to do, exit 0.
   - full (default, pre-push and CI): the whole configured gate in this order,
     stopping at the first failure: format, lint, check, steps, import,
     analyzer, tests, smoke. Godot steps go through `run`. Print a header per

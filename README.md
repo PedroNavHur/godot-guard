@@ -46,7 +46,9 @@ godot-guard gate [--fast] [--staged | FILE...]
 A directory argument stands for the scanned scripts below it.
 `gate --fast --staged` is the pre-commit hook: gdformat, gdlint, and `check` on
 the staged content of staged scripts (exported from the git index, so unstaged
-edits neither hide nor cause failures). `gate` is the pre-push hook and CI: format, lint, check, extra
+edits to them neither hide nor cause failures). Staged symlinks are skipped. The
+Resource exclusion reads the other scripts' `extends` and `class_name` from the
+working tree. `gate` is the pre-push hook and CI: format, lint, check, extra
 steps, editor import, analyzer, tests, and a smoke run, timed per step.
 
 Output lines are `path:line: message (rule)`.
