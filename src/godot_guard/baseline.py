@@ -25,8 +25,11 @@ def limit(config: Config, rule: str) -> int:
     return config.limits[LIMIT_OF[rule]]
 
 
-def item_path(key: str) -> str:
-    return key.split("::", 1)[0]
+def item_path(rule: str, key: str) -> str:
+    """File rules key by path; function names never hold `::`, so the path ends at the last one."""
+    if rule in TREE_RULES:
+        return key.rsplit("::", 1)[0]
+    return key
 
 
 def empty() -> dict:
@@ -110,7 +113,7 @@ class Judge:
 
 def in_scope(rule: str, key: str, subset: set[str] | None, unparsed: set[str]) -> bool:
     """A missing entry counts when its file is in the subset and parsed."""
-    path = item_path(key)
+    path = item_path(rule, key)
     if subset is not None and path not in subset:
         return False
     return not (rule in TREE_RULES and path in unparsed)

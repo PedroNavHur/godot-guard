@@ -164,5 +164,24 @@ class FunctionKeyTest(unittest.TestCase):
         self.assertEqual([i.key for i in items if i.rule == "cyclomatic-complexity"], ["a.gd::f#1", "a.gd::f#2"])
 
 
+class KeyPathTest(unittest.TestCase):
+    def test_paths_holding_the_key_separator(self):
+        self.assertEqual(baseline.item_path("cognitive-complexity", "a::b.gd::Inner.work"), "a::b.gd")
+        self.assertEqual(baseline.item_path("file-lines", "a::b.gd"), "a::b.gd")
+
+    def test_subset_check_reports_a_missing_function_in_such_a_file(self):
+        repo = Repo({"a::b.gd": "extends Resource\n\n\nfunc calm():\n\tpass\n"}, CONFIG)
+        self.addCleanup(repo.cleanup)
+        config = repo.config()
+        data = baseline.empty()
+        data["cognitive-complexity"] = {"a::b.gd::work": 3}
+        data["interface-cap"] = {"a::b.gd": 9}
+        baseline.write(config.baseline_path, data)
+        status, output = captured(check, config, [str(repo.root / "a::b.gd")])
+        self.assertEqual(status, 1)
+        self.assertIn("baseline entry 'a::b.gd::work' no longer exists", output)
+        self.assertIn("baseline entry 'a::b.gd' no longer exists", output)
+
+
 if __name__ == "__main__":
     unittest.main()

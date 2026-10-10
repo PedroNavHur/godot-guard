@@ -152,7 +152,9 @@ Sorted keys, two-space indent, trailing newline, so diffs stay small.
   overwrite an existing baseline unless `--force` is given. The adoption PR
   and an intentional limit change are its only uses.
 - When `check` runs on a subset of files, stale and loose detection applies
-  only to entries whose path is in the subset.
+  only to entries whose path is in the subset. A file rule's key is its whole
+  path; a complexity key's path ends at its last `::`, so paths may contain
+  `::`.
 
 ## CLI: `godot-guard`
 
