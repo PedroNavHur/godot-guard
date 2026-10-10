@@ -231,6 +231,20 @@ class DirectoryArgumentTest(ShimTest):
         self.assertIn("scripts/.hidden: hidden directories are not scanned", errors.getvalue())
         self.assertIn("scripts/gen: it matches exclude", errors.getvalue())
 
+    def test_links_in_hidden_or_excluded_directories_select_nothing(self):
+        links = {".hidden/alias.gd": "../a.gd", ".hidden/directory": "../scripts", "scripts/gen/alias.gd": "../d.gd"}
+        for name, target in links.items():
+            (self.repo.root / name).parent.mkdir(exist_ok=True)
+            (self.repo.root / name).symlink_to(target)
+        names = [".hidden/alias.gd", ".hidden/directory", ".hidden/directory/d.gd", "scripts/gen/alias.gd"]
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            status, output = captured(format_files, self.repo.config(), [str(self.repo.root / n) for n in names])
+        self.assertEqual(status, 0, output)
+        self.assertEqual(self.calls(), [])
+        for name in names:
+            self.assertIn(f"skipping {name}:", errors.getvalue())
+
     def test_staged_scripts_in_hidden_directories_are_not_selected(self):
         git(self.repo.root, "init", "-q")
         git(self.repo.root, "add", "scripts/.hidden/f.gd")

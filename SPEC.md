@@ -174,7 +174,10 @@ Run from anywhere inside the repo; the root is the nearest directory holding
   hidden directories (relative to the root) and `exclude` matches are never
   scanned, so a file or directory argument that is hidden, excluded, or below
   a hidden or excluded directory selects nothing and prints a `skipping` note
-  on stderr; `--staged` skips such scripts too. Exit 1 on any error; warnings
+  on stderr; `--staged` skips such scripts too. An argument is judged by its
+  path relative to the root as written (normalized, symlinks below the root
+  not resolved), so a link cannot make a hidden or excluded argument
+  eligible. Exit 1 on any error; warnings
   print but exit 0. End with a one-line summary: errors, warnings, files.
 - `godot-guard baseline [--init [--force]]`: as above.
 - `godot-guard format [FILE...]`: `gdformat` in write mode on the files or

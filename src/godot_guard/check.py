@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -14,16 +15,24 @@ def select(config: Config, files: list[str]) -> list[str]:
     """Repo-relative scanned scripts among `files` (paths relative to the working directory)."""
     chosen = set()
     for name in files:
-        chosen.update(expand(config, Path(name).resolve()))
+        chosen.update(expand(config, root_relative(config, name)))
     return sorted(chosen)
 
 
-def expand(config: Config, path: Path) -> list[str]:
-    """Scanned scripts at `path`: the file itself, or every one below a directory."""
-    inside = path == config.root or config.root in path.parents
-    if not inside or not path.exists():
+def root_relative(config: Config, name: str) -> str | None:
+    """`name` relative to the root, without resolving symlinks below the root; None outside it."""
+    path = Path(os.path.abspath(name))
+    for ancestor in (*reversed(path.parents), path):
+        if ancestor.resolve() == config.root:
+            return path.relative_to(ancestor).as_posix()
+    return None
+
+
+def expand(config: Config, relative: str | None) -> list[str]:
+    """Scanned scripts at `relative`: the file itself, or every one below a directory."""
+    if relative is None or not (config.root / relative).exists():
         return []
-    relative = path.relative_to(config.root).as_posix()
+    path = config.root / relative
     reason = skip_reason(config, relative, path.is_dir())
     if reason:
         print(f"godot-guard: skipping {relative}: {reason}", file=sys.stderr)
