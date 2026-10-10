@@ -8,21 +8,10 @@ from pathlib import Path
 
 from .check import check, select
 from .config import Config
+from .snapshot import snapshot, staged
 from .tools import ToolError, gdtoolkit, run_godot
 
 ANALYZER = Path(__file__).parent / "data" / "analyze_scripts.gd"
-
-
-def staged(config: Config) -> list[str]:
-    """Staged `.gd` files that still exist, as absolute paths."""
-    output = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
-        cwd=config.root, capture_output=True, text=True, check=True,
-    ).stdout
-    top = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], cwd=config.root, capture_output=True, text=True, check=True
-    ).stdout.strip()
-    return [str(Path(top) / name) for name in output.split("\0") if name.endswith(".gd")]
 
 
 def gdtool(name: str, args: list[str], files: list[str], config: Config) -> int:
@@ -52,15 +41,18 @@ def godot_steps(config: Config) -> list[tuple[str, list[str]]]:
     return steps
 
 
-def steps_for(config: Config, chosen: list[str] | None, fast: bool) -> list[tuple[str, object]]:
-    """`chosen` are the selected scripts, or None for every scanned one."""
-    files = config.scanned_files() if chosen is None else chosen
+def steps_for(
+    config: Config, chosen: list[str] | None, fast: bool, sources: Config | None = None
+) -> list[tuple[str, object]]:
+    """`chosen` are the selected scripts, or None for every scanned one; `sources` roots the copy they are read from."""
+    sources = sources or config
+    files = sources.scanned_files() if chosen is None else chosen
     gate, steps = config.gate, []
     if gate["format"]:
-        steps.append(("format", lambda: gdtool("gdformat", ["--check"], files, config)))
+        steps.append(("format", lambda: gdtool("gdformat", ["--check"], files, sources)))
     if gate["lint"]:
-        steps.append(("lint", lambda: gdtool("gdlint", [], files, config)))
-    steps.append(("check", lambda: check(config, absolute(config, chosen))))
+        steps.append(("lint", lambda: gdtool("gdlint", [], files, sources)))
+    steps.append(("check", lambda: check(sources, absolute(sources, chosen))))
     if fast:
         return steps
     for command in gate["steps"]:
@@ -96,13 +88,19 @@ def absolute(config: Config, chosen: list[str] | None) -> list[str] | None:
     return [str(config.root / path) for path in chosen]
 
 
-def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:
-    chosen = None
-    if use_staged:
-        files = staged(config)
-    if use_staged or files:
-        chosen = select(config, files)
+def run_gate(config: Config, chosen: list[str] | None, fast: bool, sources: Config | None = None) -> int:
     if chosen == [] and fast:
         print("godot-guard gate: no GDScript files selected")
         return 0
-    return run_steps(steps_for(config, chosen, fast))
+    return run_steps(steps_for(config, chosen, fast, sources))
+
+
+def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:
+    """`--staged` checks the index's content of the staged scripts, not the working tree's."""
+    if not use_staged:
+        return run_gate(config, select(config, files) if files else None, fast)
+    chosen = staged(config)
+    if not chosen:
+        return run_gate(config, chosen, fast)
+    with snapshot(config) as sources:
+        return run_gate(config, chosen, fast, sources)

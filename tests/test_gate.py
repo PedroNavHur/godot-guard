@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from godot_guard import gate as gate_module
+from godot_guard import config as config_module, gate as gate_module
 from godot_guard.cli import format_files, main
 from godot_guard.tools import ToolError, godot, run_godot
 
@@ -56,11 +56,11 @@ class FastGateTest(ShimTest):
         git(self.repo.root, "add", "a.gd", "b.gd")
         (self.repo.root / "b.gd").unlink()
 
-    def test_staged_files_that_exist(self):
+    def test_staged_files_are_checked_even_when_deleted_from_the_working_tree(self):
         status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
         self.assertEqual(status, 0, output)
-        self.assertEqual(self.calls(), ["gdformat --check a.gd", "gdlint a.gd"])
-        self.assertIn("0 errors, 0 warnings, 1 file", output)
+        self.assertEqual(self.calls(), ["gdformat --check a.gd b.gd", "gdlint a.gd b.gd"])
+        self.assertIn("0 errors, 0 warnings, 2 files", output)
         self.assertIn("== check passed in", output)
 
     def test_nothing_staged_is_nothing_to_do(self):
@@ -75,7 +75,64 @@ class FastGateTest(ShimTest):
         status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
         self.assertEqual(status, 1)
         self.assertIn("== format failed", output)
-        self.assertEqual(self.calls(), ["gdformat --check a.gd"])
+        self.assertEqual(self.calls(), ["gdformat --check a.gd b.gd"])
+
+
+WIDE = "extends Base\n\n" + "".join(f"@export var v{n} := 1\n" for n in range(9))
+
+
+class StagedContentTest(ShimTest):
+    """The fast staged gate checks the index's content, not the working tree's."""
+
+    def setUp(self):
+        super().setUp()
+        git(self.repo.root, "init", "-q")
+        self.repo.write(".gdlintrc", "max-line-length: 100\n")
+        self.shim("gdformat", extra=f'cat "$2" >> "{self.log}"')
+        self.shim("gdlint", extra=f'cat .gdlintrc >> "{self.log}"')
+
+    def stage(self, name: str, staged: str, working: str) -> None:
+        self.repo.write(name, staged)
+        git(self.repo.root, "add", name)
+        self.repo.write(name, working)
+
+    def test_invalid_staged_content_fails_with_a_clean_working_copy(self):
+        self.stage("a.gd", "func f(:\n", CLEAN)
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 1)
+        self.assertEqual(self.calls(), ["gdformat --check a.gd", "func f(:", "gdlint a.gd", "max-line-length: 100"])
+        self.assertIn("a.gd:1: cannot parse", output)
+
+    def test_valid_staged_content_passes_with_a_broken_working_copy(self):
+        self.stage("a.gd", CLEAN, "func f(:\n")
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 0, output)
+
+    def test_resource_exclusion_reads_the_index(self):
+        self.stage("base.gd", "class_name Base\nextends Node\n", "class_name Base\nextends Resource\n")
+        git(self.repo.root, "commit", "-qm", "base")
+        self.stage("wide.gd", WIDE, WIDE)
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 1)
+        self.assertIn("wide.gd:1: 9 inputs (@export 9) (max 8) (interface-cap)", output)
+
+    def test_baseline_comes_from_the_index(self):
+        self.stage("wide.gd", WIDE.replace("Base", "Node"), WIDE.replace("Base", "Node"))
+        self.stage(".godot-guard-baseline.json", '{"interface-cap": {"wide.gd": 9}}\n', '{"interface-cap": {}}\n')
+        status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
+        self.assertEqual(status, 0, output)
+
+    def test_config_root_below_the_git_root(self):
+        game = self.repo.root / "game"
+        self.repo.write("game/project.godot", "config_version=5\n")
+        self.repo.write("game/.godot-guard.yml", "paths: [.]\n")
+        self.stage("game/scripts/a.gd", "func f(:\n", CLEAN)
+        self.stage("other.gd", "func f(:\n", CLEAN)
+        status, output = captured(gate_module.gate, config_module.load(game), True, True, [])
+        self.assertEqual(status, 1)
+        self.assertEqual(self.calls()[0], "gdformat --check scripts/a.gd")
+        self.assertIn("scripts/a.gd:1: cannot parse", output)
+        self.assertIn("1 file", output)
 
 
 class FullGateTest(ShimTest):
