@@ -67,7 +67,7 @@ COMPLEXITY_SCORES = {
     "chain": (13, 4, 4),
     "matcher": (24, 3, 5),
     "with_lambda": (36, 3, 1),
-    "<lambda>": (37, None, 3),
+    "with_lambda.<lambda#1>": (37, None, 3),
     "loops": (40, 6, 4),
     "recurse": (49, 2, 2),
     "Inner.helper": (56, 3, 5),

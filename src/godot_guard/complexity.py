@@ -13,8 +13,9 @@ function on its own. Language mappings:
 - `match` is one structural increment; each non-wildcard branch is a
   cyclomatic decision, and a `when` guard adds 1 to both metrics.
 - `and`/`&&` and `or`/`||` are the same operators; `not` ends a chain.
-- Lambdas nest like any nested function; property getters and setters score
-  as their own functions, named `property.set` and `property.get`.
+- Lambdas nest like any nested function, named after the enclosing function:
+  `outer.<lambda#2>` for the second anonymous one in `outer`. Property getters
+  and setters score as their own functions, named `property.set` and `property.get`.
 - Recursion: a call to the function's own name, or `self.` plus that name.
 """
 
@@ -81,6 +82,9 @@ class Scorer:
             yield
         finally:
             self._frames[-1].nesting -= 1
+
+    def enclosing(self) -> str:
+        return self._frames[-1].function.name if self._frames else ""
 
     def _top(self) -> Function | None:
         return self._frames[0].function if self._frames else None
@@ -152,6 +156,7 @@ class Analyzer:
         self.seen_boolean: set[int] = set()
         self.classes: list[str] = []
         self.last_var = ""
+        self.lambdas: dict[str, int] = {}
 
     def walk(self, node) -> None:
         if not is_tree(node):
@@ -209,10 +214,17 @@ class Analyzer:
     def visit_lambda(self, node) -> None:
         header, *body = node.children
         name = first_name(header)
-        label = "<lambda>" if name == "<anonymous>" else name
-        with self.scorer.function(label, node.meta.line, end_line(node), (name,)):
+        with self.scorer.function(self.lambda_name(name), node.meta.line, end_line(node), (name,)):
             for child in body:
                 self.walk(child)
+
+    def lambda_name(self, name: str) -> str:
+        """`outer.name`, or `outer.<lambda#N>` numbered within `outer` for an anonymous lambda."""
+        enclosing = self.scorer.enclosing() or ".".join(self.classes)
+        if name == "<anonymous>":
+            self.lambdas[enclosing] = self.lambdas.get(enclosing, 0) + 1
+            name = f"<lambda#{self.lambdas[enclosing]}>"
+        return ".".join(part for part in (enclosing, name) if part)
 
     def visit_standalone_call(self, node) -> None:
         self.scorer.call(first_name(node))

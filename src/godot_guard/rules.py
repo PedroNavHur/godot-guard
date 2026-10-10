@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -72,24 +73,31 @@ def error_line(error: Exception) -> int:
     return max(getattr(error, "line", None) or 1, 1)
 
 
-def function_metrics(path: str, function: complexity.Function) -> list[Item]:
+def function_metrics(path: str, name: str, function: complexity.Function) -> list[Item]:
     metrics = (("cognitive", function.cognitive), ("cyclomatic", function.cyclomatic))
     return [
-        Item(f"{metric}-complexity", f"{path}::{function.name}", path, function.line, value,
-             f"{function.name} has {metric} complexity {value}")
+        Item(f"{metric}-complexity", f"{path}::{name}", path, function.line, value,
+             f"{name} has {metric} complexity {value}")
         for metric, value in metrics if value is not None
     ]
 
 
-def function_items(path: str, functions: list[complexity.Function]) -> list[Item]:
-    """Cognitive and cyclomatic items; repeated names keep their worst score."""
-    best: dict[tuple[str, str], Item] = {}
+def unique_names(functions: list[complexity.Function]) -> list[str]:
+    """Function names, with `#N` on every occurrence of a name repeated in the file."""
+    counts = Counter(f.name for f in functions)
+    seen: Counter = Counter()
+    names = []
     for function in functions:
-        for item in function_metrics(path, function):
-            current = best.get((item.rule, item.key))
-            if current is None or item.value > current.value:
-                best[(item.rule, item.key)] = item
-    return list(best.values())
+        seen[function.name] += 1
+        suffix = f"#{seen[function.name]}" if counts[function.name] > 1 else ""
+        names.append(function.name + suffix)
+    return names
+
+
+def function_items(path: str, functions: list[complexity.Function]) -> list[Item]:
+    """Cognitive and cyclomatic items, one key per function."""
+    names = unique_names(functions)
+    return [item for name, function in zip(names, functions) for item in function_metrics(path, name, function)]
 
 
 def tree_rules(result: FileResult, source: str) -> None:

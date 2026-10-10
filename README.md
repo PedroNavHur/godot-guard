@@ -96,6 +96,12 @@ adopts godot-guard; it may only shrink.
 4. Raising a limit or re-baselining on purpose is `baseline --init --force`,
    reviewed like any other change.
 
+Keys are the repo-relative path for file rules (`file-lines`, `long-comment`,
+`interface-cap`) and `path::name` for the complexity rules, where the name is
+qualified with `.`: `Inner.method`, `speed.set`, and `outer.<lambda#2>` for the
+second anonymous lambda in `outer`. A name repeated in one file is numbered on
+every occurrence (`f#1`, `f#2`).
+
 Boundary hits and nested ternaries are never baselined.
 
 ## Development

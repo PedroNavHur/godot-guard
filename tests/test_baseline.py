@@ -5,6 +5,7 @@ import unittest
 
 from godot_guard import baseline
 from godot_guard.check import check, update_baseline
+from godot_guard.rules import Surfaces, analyze
 
 from .helpers import Repo, captured
 
@@ -128,6 +129,39 @@ class OtherRulesTest(unittest.TestCase):
         self.addCleanup(repo.cleanup)
         status, output = captured(check, repo.config())
         self.assertIn("long.gd:1: 6 code lines (max 3) (file-lines)", output)
+
+
+LAMBDAS = (
+    "extends Node\n\n\nfunc f():\n"
+    "\tvar old = func(x):\n" + "".join(f"\t\tif x == {n}:\n\t\t\treturn {n}\n" for n in range(4)) + "\t\treturn -1\n"
+    "\tvar new = func(x):\n" + "".join(f"\t\tif x == {n}:\n\t\t\treturn {n}\n" for n in range(3)) + "\t\treturn -1\n"
+    "\treturn [old, new]\n"
+)
+
+
+class FunctionKeyTest(unittest.TestCase):
+    def test_each_lambda_is_judged_on_its_own(self):
+        repo = Repo({"a.gd": LAMBDAS}, "limits:\n  cognitive: 100\n  cyclomatic: 2\n")
+        self.addCleanup(repo.cleanup)
+        config = repo.config()
+        data = baseline.empty()
+        data["cyclomatic-complexity"] = {"a.gd::f.<lambda#1>": 5}
+        baseline.write(config.baseline_path, data)
+        status, output = captured(check, config)
+        self.assertEqual(status, 1)
+        self.assertIn("a.gd:15: f.<lambda#2> has cyclomatic complexity 4 (max 2)", output)
+        self.assertNotIn("<lambda#1>", output)
+        self.assertEqual(captured(update_baseline, repo.config(), init=True, force=True)[0], 0)
+        self.assertEqual(baseline.load(config.baseline_path)["cyclomatic-complexity"], {
+            "a.gd::f.<lambda#1>": 5, "a.gd::f.<lambda#2>": 4,
+        })
+
+    def test_repeated_names_are_numbered(self):
+        source = "extends Node\n\n\nfunc f():\n\tpass\n\n\nfunc f():\n\tpass\n"
+        repo = Repo({"a.gd": source})
+        self.addCleanup(repo.cleanup)
+        items = analyze(repo.config(), "a.gd", Surfaces(repo.root)).items
+        self.assertEqual([i.key for i in items if i.rule == "cyclomatic-complexity"], ["a.gd::f#1", "a.gd::f#2"])
 
 
 if __name__ == "__main__":

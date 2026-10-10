@@ -22,7 +22,17 @@ class ComplexityTest(unittest.TestCase):
         source = "func f(x):\n\tvar g = func(y):\n\t\tif y:\n\t\t\treturn 1\n\t\treturn 0\n\treturn g\n"
         functions = {f.name: f for f in complexity.score(tree(source))}
         self.assertEqual(functions["f"].cognitive, 2)
-        self.assertEqual(functions["<lambda>"].cyclomatic, 2)
+        self.assertEqual(functions["f.<lambda#1>"].cyclomatic, 2)
+
+    def test_lambdas_are_named_after_their_enclosing_function(self):
+        source = (
+            "var top = func(): return 1\n\n\nfunc f():\n\tvar a = func(): return func(): return 2\n"
+            "\tvar b = func named(): return 3\n\tvar c = func(): return 4\n\n\nclass Inner:\n\tvar d = func(): return 5\n"
+        )
+        names = [f.name for f in complexity.score(tree(source))]
+        self.assertEqual(names, [
+            "<lambda#1>", "f", "f.<lambda#1>", "f.<lambda#1>.<lambda#1>", "f.named", "f.<lambda#2>", "Inner.<lambda#1>",
+        ])
 
     def test_nested_ternary_reports_outermost_once(self):
         self.assertEqual(complexity.nested_ternaries(tree(fixtures.NESTED_TERNARY)), [6, 7, 8])

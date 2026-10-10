@@ -84,7 +84,13 @@ the details).
 - **cognitive-complexity / cyclomatic-complexity**: per function, scored as in
   `complexity_gdscript.py` (SonarSource cognitive v1.7, ESLint classic
   cyclomatic). Nested lambdas fold into the enclosing function for cognitive,
-  score their own cyclomatic. Key: `path::Qualified.name`.
+  score their own cyclomatic. Key: `path::Qualified.name`, unique per
+  function. Names join with `.` only: inner classes (`Inner.method`),
+  property accessors (`speed.set`, `speed.get`), and lambdas, which take the
+  enclosing function's name and an ordinal among its anonymous lambdas
+  (`outer.<lambda#2>`; `<lambda#1>` or `Inner.<lambda#1>` outside any
+  function; `outer.named` for a named lambda). A name still repeated in one
+  file gets `#N` on every occurrence (`f#1`, `f#2`).
 - **file-lines**: lines that are neither blank nor comment-only (`#` or `##`).
   Key: `path`.
 - **long-comment**: an unbroken run of own-line `#` comments with more than
