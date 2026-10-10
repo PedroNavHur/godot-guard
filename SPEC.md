@@ -74,9 +74,9 @@ gate:
 ```
 
 Unknown keys are errors (catch typos), and so is a key repeated in one
-mapping at any depth (reported with its line). A `<<` merge key works as YAML
-defines it: a mapping's own keys override merged ones, and the merged mappings'
-own keys must be unique too. An omitted key or an explicit null
+mapping at any depth (reported with its line). Anchors, aliases, and `<<`
+merge keys are not supported and are errors too. Every YAML error is one line
+naming the line it points at. An omitted key or an explicit null
 takes its default; any other value of the wrong type (a top-level `false` or
 `[]`, `limits: false`, `paths: {}`) is an error naming the key and the
 expected type. Rule levels: `error`, `warn`, `off`.

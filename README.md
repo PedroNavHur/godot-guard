@@ -58,7 +58,8 @@ Output lines are `path:line: message (rule)`.
 ## Config: `.godot-guard.yml`
 
 Every key is optional; the values below are the defaults, except the boundary
-example (the default is `[]`). Unknown and repeated keys are errors; an omitted key or null
+example (the default is `[]`). Unknown and repeated keys are errors, and so are YAML
+anchors, aliases, and `<<` merge keys; an omitted key or null
 takes the default, and a value of the wrong type is an error.
 
 ```yaml

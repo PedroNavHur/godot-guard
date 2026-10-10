@@ -6,7 +6,6 @@ import copy
 import fnmatch
 import os
 import re
-from collections.abc import Hashable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,34 +46,25 @@ class ConfigError(Exception):
     pass
 
 
-class UniqueKeyLoader(yaml.SafeLoader):
-    """A safe loader that rejects a key repeated in one mapping, at any depth.
+class StrictLoader(yaml.SafeLoader):
+    """A safe loader without anchors, aliases, or merge keys, that rejects a key repeated in one mapping."""
 
-    Keys a `<<` merge brings in may be overridden, as YAML allows; only a mapping's own keys must be unique.
-    """
+    def compose_node(self, parent, index):
+        event = self.peek_event()
+        if event.anchor is not None:
+            raise yaml.composer.ComposerError(None, None, "anchors and aliases are not supported", event.start_mark)
+        return super().compose_node(parent, index)
 
     def construct_mapping(self, node, deep=False):
-        self.reject_duplicates(node, deep)
-        return super().construct_mapping(node, deep)
-
-    def reject_duplicates(self, node, deep: bool) -> None:
-        seen = set()
-        for key_node, value_node in node.value:
+        seen = []
+        for key_node, _ in node.value:
             if key_node.tag == MERGE_TAG:
-                self.reject_merged_duplicates(value_node, deep)
-                continue
+                raise yaml.constructor.ConstructorError(None, None, "merge keys are not supported", key_node.start_mark)
             key = self.construct_object(key_node, deep=deep)
-            if isinstance(key, Hashable) and key in seen:
+            if key in seen:
                 raise yaml.constructor.ConstructorError(None, None, f"duplicate key {key!r}", key_node.start_mark)
-            if isinstance(key, Hashable):
-                seen.add(key)
-
-    def reject_merged_duplicates(self, node, deep: bool) -> None:
-        """Check the mappings a merge brings in, which are flattened without being constructed."""
-        sources = node.value if isinstance(node, yaml.SequenceNode) else [node]
-        for source in sources:
-            if isinstance(source, yaml.MappingNode):
-                self.reject_duplicates(source, deep)
+            seen.append(key)
+        return super().construct_mapping(node, deep)
 
 
 @dataclass
@@ -147,11 +137,20 @@ def load(start: Path | None = None) -> Config:
     if not has_config:
         return config
     try:
-        data = yaml.load((root / CONFIG_NAME).read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
+        data = yaml.load((root / CONFIG_NAME).read_text(encoding="utf-8"), Loader=StrictLoader)
     except yaml.YAMLError as error:
-        raise ConfigError(f"{CONFIG_NAME}: {error}") from error
+        raise ConfigError(f"{CONFIG_NAME}: {yaml_problem(error)}") from error
     apply(config, {} if data is None else data)
     return config
+
+
+def yaml_problem(error: yaml.YAMLError) -> str:
+    """The error on one line, with the line it points at."""
+    problem = getattr(error, "problem", None) or str(error).splitlines()[0]
+    mark = getattr(error, "problem_mark", None)
+    if mark is None:
+        return problem
+    return f"line {mark.line + 1}: {problem}"
 
 
 def apply(config: Config, data) -> None:
