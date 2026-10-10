@@ -9,7 +9,7 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from .config import BASELINE_NAME, Config
+from .config import BASELINE_NAME, Config, hidden
 
 # Each tool takes the first of its names found from the working directory upward.
 TOOL_CONFIGS = (("gdlintrc", ".gdlintrc"), ("gdformatrc", ".gdformatrc"))
@@ -35,6 +35,13 @@ def staged(config: Config) -> tuple[list[str], list[str]]:
     entries = {tuple(entry.split("\t", 1)) for entry in output if entry}
     links = {path for info, path in entries if info.startswith(SYMLINK_MODE)}
     return sorted({path for _, path in entries} - links), sorted(links)
+
+
+def indexed(config: Config, chosen: list[str]) -> list[str]:
+    """Scripts in the index below the root, submodules' included, other than `chosen` and hidden ones."""
+    names = git(config, "ls-files", "-z", "--recurse-submodules").split("\0")
+    skip = set(chosen)
+    return [name for name in names if name.endswith(".gd") and not hidden(name) and name not in skip]
 
 
 def nearest(start: Path, names: tuple[str, ...]) -> Path | None:

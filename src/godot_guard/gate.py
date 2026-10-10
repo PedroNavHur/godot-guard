@@ -9,7 +9,7 @@ from pathlib import Path
 from .check import check, select
 from .config import Config
 from .rules import Surfaces
-from .snapshot import snapshot, staged
+from .snapshot import indexed, snapshot, staged
 from .tools import ToolError, gdtoolkit, run_godot
 
 ANALYZER = Path(__file__).parent / "data" / "analyze_scripts.gd"
@@ -53,7 +53,7 @@ def steps_for(
         steps.append(("format", lambda: gdtool("gdformat", ["--check"], files, sources)))
     if gate["lint"]:
         steps.append(("lint", lambda: gdtool("gdlint", [], files, sources)))
-    steps.append(("check", lambda: check(sources, absolute(sources, chosen), resource_map(config, sources))))
+    steps.append(("check", lambda: check(sources, absolute(sources, chosen), resource_map(config, sources, chosen))))
     if fast:
         return steps
     for command in gate["steps"]:
@@ -64,11 +64,13 @@ def steps_for(
     return steps
 
 
-def resource_map(config: Config, sources: Config) -> Surfaces | None:
-    """The working tree's scripts overlaid with the snapshot's, when the scripts come from a snapshot."""
+def resource_map(config: Config, sources: Config, chosen: list[str] | None) -> Surfaces | None:
+    """For a snapshot: the index's other scripts as in the working tree, overlaid with the snapshot's."""
     if sources is config:
         return None
-    return Surfaces(config.root, sources.root)
+    surfaces = Surfaces(config.root, indexed(config, chosen))
+    surfaces.overlay(sources.root, chosen)
+    return surfaces
 
 
 def run_steps(steps: list[tuple[str, object]]) -> int:

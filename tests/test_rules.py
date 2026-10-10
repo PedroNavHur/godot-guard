@@ -56,15 +56,17 @@ class InterfaceTest(unittest.TestCase):
         self.assertNotIn("interface-cap", [i.rule for i in sword.items])
         self.assertEqual([i.value for i in wide.items if i.rule == "interface-cap"], [11])
 
-    def test_later_roots_override_and_dangling_links_are_skipped(self):
-        working = Repo({"base.gd": "class_name Base\nextends Resource\n", "other.gd": "extends Node\n"})
+    def test_overlay_wins_by_path_and_class_and_dangling_links_are_skipped(self):
+        resource = "class_name Base\nextends Resource\n"
+        working = Repo({"base.gd": resource, "z_old.gd": resource, "other.gd": "extends Node\n"})
         staged = Repo({"base.gd": "class_name Base\nextends Node\n"})
         for repo in (working, staged):
             self.addCleanup(repo.cleanup)
         (working.root / "dangling.gd").symlink_to("missing.txt")
-        surfaces = Surfaces(working.root, staged.root)
-        self.assertEqual(sorted(surfaces.by_path), ["base.gd", "other.gd"])
-        self.assertEqual(surfaces.by_class["Base"].extends, "Node")
+        surfaces = Surfaces(working.root, ["base.gd", "dangling.gd", "other.gd", "z_old.gd"])
+        surfaces.overlay(staged.root, ["base.gd"])
+        self.assertEqual(sorted(surfaces.by_path), ["base.gd", "other.gd", "z_old.gd"])
+        self.assertEqual((surfaces.by_path["base.gd"].extends, surfaces.by_class["Base"].extends), ("Node", "Node"))
 
 
 class BoundaryTest(unittest.TestCase):

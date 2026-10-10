@@ -45,19 +45,20 @@ class FileResult:
 
 
 class Surfaces:
-    """Interface surfaces of every script under the roots, for the Resource exclusion.
+    """Interface surfaces of scripts by root-relative path and by class_name, for the Resource exclusion.
 
-    A later root's script replaces an earlier root's at the same relative path; unreadable scripts are skipped.
+    Every script under the root is read when `paths` is None; unreadable scripts are skipped.
     """
 
-    def __init__(self, *roots: Path):
-        self.by_path = {}
-        for root in roots:
-            for relative in walk_scripts(root, root):
-                source = read_script(root / relative)
-                if source is not None:
-                    self.by_path[relative] = interface.parse(relative, source)
-        self.by_class = {s.class_name: s for s in self.by_path.values() if s.class_name}
+    def __init__(self, root: Path, paths: list[str] | None = None):
+        self.by_path = read_surfaces(root, walk_scripts(root, root) if paths is None else paths)
+        self.by_class = classes(self.by_path)
+
+    def overlay(self, root: Path, paths: list[str]) -> None:
+        """Read `paths` under `root` over the current scripts; their paths and class_names win."""
+        surfaces = read_surfaces(root, paths)
+        self.by_path.update(surfaces)
+        self.by_class.update(classes(surfaces))
 
     def surface(self, relative: str, source: str) -> interface.Surface | None:
         """The script's surface, or None for a Resource script."""
@@ -66,6 +67,16 @@ class Surfaces:
         if interface.is_resource(surface, self.by_class, self.by_path):
             return None
         return surface
+
+
+def read_surfaces(root: Path, paths: list[str]) -> dict[str, interface.Surface]:
+    sources = {relative: read_script(root / relative) for relative in paths}
+    return {relative: interface.parse(relative, source) for relative, source in sources.items() if source is not None}
+
+
+def classes(surfaces: dict[str, interface.Surface]) -> dict[str, interface.Surface]:
+    """By class_name; a later script wins a repeated name."""
+    return {s.class_name: s for s in surfaces.values() if s.class_name}
 
 
 def read_script(path: Path) -> str | None:

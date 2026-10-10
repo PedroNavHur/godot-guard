@@ -80,6 +80,7 @@ class FastGateTest(ShimTest):
         self.assertEqual(self.calls(), ["gdformat --check a.gd b.gd"])
 
 
+RESOURCE_BASE = "class_name Base\nextends Resource\n"
 WIDE = "extends Base\n\n" + "".join(f"@export var v{n} := 1\n" for n in range(9))
 
 
@@ -116,6 +117,33 @@ class StagedContentTest(ShimTest):
         status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
         self.assertEqual(status, 1)
         self.assertIn("wide.gd:1: 9 inputs (@export 9) (max 8) (interface-cap)", output)
+
+    def restage_base(self, delete_old: bool, add_new: bool) -> tuple[int, str]:
+        """Commit z_old.gd declaring `Base extends Resource` and an `extends Base` script, restage, and gate."""
+        self.stage("z_old.gd", RESOURCE_BASE, RESOURCE_BASE)
+        self.stage("wide.gd", WIDE, WIDE)
+        git(self.repo.root, "commit", "-qm", "base")
+        if delete_old:
+            git(self.repo.root, "rm", "-q", "--cached", "z_old.gd")
+        if add_new:
+            self.stage("a_new.gd", "class_name Base\nextends Node\n", "class_name Base\nextends Node\n")
+        self.stage("wide.gd", WIDE + "\n", WIDE + "\n")
+        return captured(gate_module.gate, self.repo.config(), True, True, [])
+
+    def test_staged_class_name_beats_the_working_tree(self):
+        status, output = self.restage_base(delete_old=False, add_new=True)
+        self.assertEqual(status, 1, output)
+        self.assertIn("wide.gd:1: 9 inputs", output)
+
+    def test_scripts_staged_for_deletion_leave_the_resource_map(self):
+        status, output = self.restage_base(delete_old=True, add_new=False)
+        self.assertEqual(status, 1, output)
+        self.assertIn("wide.gd:1: 9 inputs", output)
+
+    def test_staged_deletion_and_new_declaration_of_a_class(self):
+        status, output = self.restage_base(delete_old=True, add_new=True)
+        self.assertEqual(status, 1, output)
+        self.assertIn("wide.gd:1: 9 inputs", output)
 
     def test_resource_exclusion_reads_the_working_tree_for_unselected_scripts(self):
         source = self.repo.root / ".source"

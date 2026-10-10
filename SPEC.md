@@ -200,9 +200,12 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     temporary copy of the root, with the gdlint and gdformat configs the tools
     would find from the root. gdformat, gdlint, and the rules run there, and
     paths print repo-relative. The Resource exclusion's
-    `extends`/`class_name` map reads the working tree for every other script
-    (submodules included) and the exported content for the selected ones; a
-    script it cannot read, such as a dangling symlink, is left out of the map.
+    `extends`/`class_name` map follows the index: it reads the working tree's
+    copy of every other script in the index below the root (`git ls-files
+    --recurse-submodules`, so submodule scripts count; hidden directories
+    do not), then the exported content of the selected ones, whose paths and
+    `class_name`s win. A script staged for deletion is left out, and so is
+    one the map cannot read, such as a dangling symlink.
     Nothing selected means nothing to do, exit 0.
   - full (default, pre-push and CI): the whole configured gate in this order,
     stopping at the first failure: format, lint, check, steps, import,

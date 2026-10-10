@@ -52,9 +52,10 @@ excluded directory stays skipped wherever it points.
 the staged content of staged scripts (exported from the git index, so unstaged
 edits to them neither hide nor cause failures). Symlinked scripts are not
 supported there: a staged one fails the gate, so commit the real file. The
-Resource exclusion reads the other scripts' `extends` and `class_name` from the
-working tree. `gate` is the pre-push hook and CI: format, lint, check, extra
-steps, editor import, analyzer, tests, and a smoke run, timed per step.
+Resource exclusion reads the other scripts in the index from the working tree,
+and the staged scripts' declarations win. `gate` is the pre-push hook and CI:
+format, lint, check, extra steps, editor import, analyzer, tests, and a smoke
+run, timed per step.
 
 Output lines are `path:line: message (rule)`.
 
