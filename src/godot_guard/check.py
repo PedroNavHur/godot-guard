@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from . import baseline
-from .config import BASELINE_NAME, Config, walk_scripts
+from .config import BASELINE_NAME, Config, hidden, matches, walk_scripts
 from .rules import FileResult, Problem, Surfaces, analyze
 
 
@@ -22,7 +23,24 @@ def expand(config: Config, path: Path) -> list[str]:
     inside = path == config.root or config.root in path.parents
     if not inside or not path.exists():
         return []
+    relative = path.relative_to(config.root).as_posix()
+    reason = skip_reason(config, relative, path.is_dir())
+    if reason:
+        print(f"godot-guard: skipping {relative}: {reason}", file=sys.stderr)
+        return []
     return [relative for relative in walk_scripts(config.root, path) if config.is_scanned(relative)]
+
+
+def skip_reason(config: Config, relative: str, is_dir: bool) -> str | None:
+    """Why an argument selects nothing: it or a directory above it is hidden or excluded."""
+    if relative == ".":
+        return None
+    probe = f"{relative}/" if is_dir else relative
+    if hidden(probe):
+        return "hidden directories are not scanned"
+    if matches(probe, config.exclude):
+        return "it matches exclude"
+    return None
 
 
 def measure(config: Config, paths: list[str], surfaces: Surfaces | None = None) -> list[FileResult]:

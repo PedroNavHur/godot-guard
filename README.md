@@ -43,7 +43,9 @@ godot-guard run -- ARGS...          # Godot; fails on ERROR:, WARNING:, SCRIPT E
 godot-guard gate [--fast] [--staged | FILE...]
 ```
 
-A directory argument stands for the scanned scripts below it.
+A directory argument stands for the scanned scripts below it. Hidden
+directories and `exclude` matches are never scanned, even when named as an
+argument; such an argument prints a `skipping` note and selects nothing.
 `gate --fast --staged` is the pre-commit hook: gdformat, gdlint, and `check` on
 the staged content of staged scripts (exported from the git index, so unstaged
 edits to them neither hide nor cause failures). Staged symlinks are skipped. The

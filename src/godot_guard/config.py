@@ -95,7 +95,7 @@ class Config:
         return self.rules.get(rule, "error")
 
     def is_scanned(self, relative: str) -> bool:
-        if not relative.endswith(".gd") or matches(relative, self.exclude):
+        if not relative.endswith(".gd") or hidden(relative) or matches(relative, self.exclude):
             return False
         return any(p == "." or relative == p or relative.startswith(p.rstrip("/") + "/") for p in self.paths)
 
@@ -104,6 +104,11 @@ class Config:
         for entry in self.paths:
             found.update(r for r in walk_scripts(self.root, self.root / entry) if self.is_scanned(r))
         return sorted(found)
+
+
+def hidden(relative: str) -> bool:
+    """Whether a directory on the root-relative path is hidden; a trailing `/` marks the path itself as one."""
+    return any(part.startswith(".") for part in relative.split("/")[:-1])
 
 
 def matches(relative: str, patterns: list[str]) -> bool:
