@@ -6,6 +6,7 @@ import copy
 import fnmatch
 import os
 import re
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,6 +44,20 @@ BOUNDARY_KEYS = {"name", "paths", "forbid", "message"}
 
 class ConfigError(Exception):
     pass
+
+
+class UniqueKeyLoader(yaml.SafeLoader):
+    """A safe loader that rejects a key repeated in one mapping, at any depth."""
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if isinstance(key, Hashable) and key in seen:
+                raise yaml.constructor.ConstructorError(None, None, f"duplicate key {key!r}", key_node.start_mark)
+            if isinstance(key, Hashable):
+                seen.add(key)
+        return super().construct_mapping(node, deep)
 
 
 @dataclass
@@ -110,7 +125,7 @@ def load(start: Path | None = None) -> Config:
     if not has_config:
         return config
     try:
-        data = yaml.safe_load((root / CONFIG_NAME).read_text(encoding="utf-8"))
+        data = yaml.load((root / CONFIG_NAME).read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
     except yaml.YAMLError as error:
         raise ConfigError(f"{CONFIG_NAME}: {error}") from error
     apply(config, {} if data is None else data)

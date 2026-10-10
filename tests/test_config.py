@@ -54,6 +54,18 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual((config.rules["file-lines"], config.gate["smoke"], config.boundaries), ("error", ["--quit-after", "3"], []))
         self.assertEqual(self.repo({}, "").config().paths, ["."])
 
+    def test_duplicate_keys_are_errors(self):
+        cases = (
+            ("limits: {cognitve: 1}\nlimits: {cognitive: 100}\n", "duplicate key 'limits'", "line 2"),
+            ("gate:\n  format: true\n  lint: true\n  format: false\n", "duplicate key 'format'", "line 4"),
+            ("boundaries:\n  - name: a\n    forbid: [x]\n    name: b\n", "duplicate key 'name'", "line 4"),
+        )
+        for text, message, line in cases:
+            with self.assertRaises(config_module.ConfigError, msg=text) as caught:
+                self.repo({}, text).config()
+            self.assertIn(message, str(caught.exception))
+            self.assertIn(line, str(caught.exception))
+
     def test_bad_level_is_an_error(self):
         with self.assertRaises(config_module.ConfigError):
             self.repo({}, "rules:\n  file-lines: fatal\n").config()

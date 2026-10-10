@@ -73,7 +73,8 @@ gate:
   smoke: [--quit-after, "3"]   # args for a main-scene run; [] or false skips it
 ```
 
-Unknown keys are errors (catch typos). An omitted key or an explicit null
+Unknown keys are errors (catch typos), and so is a key repeated in one
+mapping at any depth (reported with its line). An omitted key or an explicit null
 takes its default; any other value of the wrong type (a top-level `false` or
 `[]`, `limits: false`, `paths: {}`) is an error naming the key and the
 expected type. Rule levels: `error`, `warn`, `off`.
