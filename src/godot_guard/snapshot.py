@@ -22,17 +22,19 @@ def git(config: Config, *args: str, stdin: str | None = None) -> str:
     ).stdout
 
 
-def staged(config: Config) -> list[str]:
-    """Scanned scripts added, copied, modified, or renamed in the index, relative to the root.
+def staged(config: Config) -> tuple[list[str], list[str]]:
+    """Scanned scripts added, copied, modified, renamed, or retyped in the index, relative to the root.
 
-    A staged symlink has no content of its own to check, so it is left out.
+    Returns the regular files and, apart, the symlinks, which have no content of their own to check.
     """
-    names = git(config, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--relative", "-z").split("\0")
+    names = git(config, "diff", "--cached", "--name-only", "--diff-filter=ACMRT", "--relative", "-z").split("\0")
     scanned = [name for name in names if config.is_scanned(name)]
     if not scanned:
-        return []
-    entries = git(config, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *scanned).split("\0")
-    return sorted({entry.split("\t", 1)[1] for entry in entries if entry and not entry.startswith(SYMLINK_MODE)})
+        return [], []
+    output = git(config, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *scanned).split("\0")
+    entries = {tuple(entry.split("\t", 1)) for entry in output if entry}
+    links = {path for info, path in entries if info.startswith(SYMLINK_MODE)}
+    return sorted({path for _, path in entries} - links), sorted(links)
 
 
 def nearest(start: Path, names: tuple[str, ...]) -> Path | None:

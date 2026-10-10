@@ -107,7 +107,11 @@ def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:
     """`--staged` checks the index's content of the staged scripts, not the working tree's."""
     if not use_staged:
         return run_gate(config, select(config, files) if files else None, fast)
-    chosen = staged(config)
+    chosen, links = staged(config)
+    for link in links:
+        print(f"{link}: symlinked scripts are not supported; commit the real file")
+    if links:
+        return 1
     if not chosen:
         return run_gate(config, chosen, fast)
     with snapshot(config, chosen) as sources:

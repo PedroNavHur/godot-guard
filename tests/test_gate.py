@@ -140,14 +140,19 @@ class StagedContentTest(ShimTest):
         self.assertEqual(status, 0, output)
         self.assertIn("0 errors, 0 warnings, 1 file", output)
 
-    def test_staged_symlink_is_not_selected(self):
+    def test_staged_symlinked_scripts_fail_the_gate(self):
         self.stage("target.gd", CLEAN, CLEAN)
-        git(self.repo.root, "commit", "-qm", "target")
-        (self.repo.root / "alias.gd").symlink_to("target.gd")
-        git(self.repo.root, "add", "alias.gd")
+        self.stage("retyped.gd", CLEAN, CLEAN)
+        git(self.repo.root, "commit", "-qm", "scripts")
+        (self.repo.root / "retyped.gd").unlink()
+        for name in ("alias.gd", "retyped.gd"):
+            (self.repo.root / name).symlink_to("target.gd")
+        git(self.repo.root, "add", "alias.gd", "retyped.gd")
         status, output = captured(gate_module.gate, self.repo.config(), True, True, [])
-        self.assertEqual(status, 0, output)
-        self.assertIn("no GDScript files selected", output)
+        self.assertEqual(status, 1, output)
+        message = "{}: symlinked scripts are not supported; commit the real file"
+        self.assertEqual(output.splitlines(), [message.format("alias.gd"), message.format("retyped.gd")])
+        self.assertEqual(self.calls(), [])
 
     def test_baseline_comes_from_the_index(self):
         self.stage("wide.gd", WIDE.replace("Base", "Node"), WIDE.replace("Base", "Node"))

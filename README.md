@@ -48,7 +48,8 @@ directories and `exclude` matches are never scanned, even when named as an
 argument; such an argument prints a `skipping` note and selects nothing.
 `gate --fast --staged` is the pre-commit hook: gdformat, gdlint, and `check` on
 the staged content of staged scripts (exported from the git index, so unstaged
-edits to them neither hide nor cause failures). Staged symlinks are skipped. The
+edits to them neither hide nor cause failures). Symlinked scripts are not
+supported there: a staged one fails the gate, so commit the real file. The
 Resource exclusion reads the other scripts' `extends` and `class_name` from the
 working tree. `gate` is the pre-push hook and CI: format, lint, check, extra
 steps, editor import, analyzer, tests, and a smoke run, timed per step.

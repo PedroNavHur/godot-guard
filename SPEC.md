@@ -186,10 +186,12 @@ Run from anywhere inside the repo; the root is the nearest directory holding
 - `godot-guard gate [--fast] [--staged | FILE...]`:
   - `--fast` (pre-commit): `gdformat --check`, `gdlint`, and `check` on the
     selected files only. `--staged` selects the scanned `.gd` files added,
-    copied, modified, or renamed in the index (`git diff --cached --name-only
-    --diff-filter=ACMR`), including ones since deleted from the working tree,
-    and checks what will be committed. A staged symlink is not selected: it
-    has no content of its own, and its target is checked when it is staged.
+    copied, modified, renamed, or retyped in the index (`git diff --cached
+    --name-only --diff-filter=ACMRT`), including ones since deleted from the
+    working tree, and checks what will be committed. Symlinked scripts are
+    not supported in staged mode: each staged one fails the gate (exit 1) with
+    `PATH: symlinked scripts are not supported; commit the real file`. Full
+    scans and file arguments read a symlinked script through its link.
     The index's content of the selected scripts and the index's baseline (the
     working tree's baseline when the index has none) are exported to a
     temporary copy of the root, with the gdlint and gdformat configs the tools
