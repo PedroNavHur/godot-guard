@@ -59,12 +59,19 @@ class ConfigTest(unittest.TestCase):
             ("limits: {cognitve: 1}\nlimits: {cognitive: 100}\n", "duplicate key 'limits'", "line 2"),
             ("gate:\n  format: true\n  lint: true\n  format: false\n", "duplicate key 'format'", "line 4"),
             ("boundaries:\n  - name: a\n    forbid: [x]\n    name: b\n", "duplicate key 'name'", "line 4"),
+            ("limits:\n  <<: {cognitive: 100}\n  cyclomatic: 16\n  cyclomatic: 3\n", "duplicate key 'cyclomatic'", "line 4"),
+            ("limits:\n  <<: [{cognitive: 100, cognitive: 1}]\n", "duplicate key 'cognitive'", "line 2"),
         )
         for text, message, line in cases:
             with self.assertRaises(config_module.ConfigError, msg=text) as caught:
                 self.repo({}, text).config()
             self.assertIn(message, str(caught.exception))
             self.assertIn(line, str(caught.exception))
+
+    def test_merge_keys_merge_and_explicit_keys_override(self):
+        for text in ("limits: {<<: {cognitive: 100}, cyclomatic: 16}\n", "limits: {<<: {cognitive: 100, cyclomatic: 50}, cyclomatic: 16}\n"):
+            limits = self.repo({}, text).config().limits
+            self.assertEqual((limits["cognitive"], limits["cyclomatic"]), (100, 16), text)
 
     def test_bad_level_is_an_error(self):
         with self.assertRaises(config_module.ConfigError):

@@ -40,6 +40,7 @@ DEFAULTS = {
     },
 }
 BOUNDARY_KEYS = {"name", "paths", "forbid", "message"}
+MERGE_TAG = "tag:yaml.org,2002:merge"
 
 
 class ConfigError(Exception):
@@ -47,17 +48,33 @@ class ConfigError(Exception):
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
-    """A safe loader that rejects a key repeated in one mapping, at any depth."""
+    """A safe loader that rejects a key repeated in one mapping, at any depth.
+
+    Keys a `<<` merge brings in may be overridden, as YAML allows; only a mapping's own keys must be unique.
+    """
 
     def construct_mapping(self, node, deep=False):
+        self.reject_duplicates(node, deep)
+        return super().construct_mapping(node, deep)
+
+    def reject_duplicates(self, node, deep: bool) -> None:
         seen = set()
-        for key_node, _ in node.value:
+        for key_node, value_node in node.value:
+            if key_node.tag == MERGE_TAG:
+                self.reject_merged_duplicates(value_node, deep)
+                continue
             key = self.construct_object(key_node, deep=deep)
             if isinstance(key, Hashable) and key in seen:
                 raise yaml.constructor.ConstructorError(None, None, f"duplicate key {key!r}", key_node.start_mark)
             if isinstance(key, Hashable):
                 seen.add(key)
-        return super().construct_mapping(node, deep)
+
+    def reject_merged_duplicates(self, node, deep: bool) -> None:
+        """Check the mappings a merge brings in, which are flattened without being constructed."""
+        sources = node.value if isinstance(node, yaml.SequenceNode) else [node]
+        for source in sources:
+            if isinstance(source, yaml.MappingNode):
+                self.reject_duplicates(source, deep)
 
 
 @dataclass
