@@ -1,0 +1,9 @@
+#!/bin/sh
+# Installed by godot-guard init. Enable once per clone: git config core.hooksPath .githooks
+set -eu
+guard=.venv/bin/godot-guard
+[ -x "$guard" ] || guard=godot-guard
+if command -v host-check >/dev/null 2>&1; then
+  exec host-check "$guard" gate
+fi
+exec "$guard" gate

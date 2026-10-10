@@ -1,0 +1,29 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install gdtoolkit and godot-guard
+        run: pip install --requirement tools/requirements-lint.txt
+
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: {godot_version}
+          use-dotnet: false
+          include-templates: false
+
+      - name: Gate
+        timeout-minutes: 15
+        run: godot-guard gate
