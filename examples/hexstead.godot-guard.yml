@@ -1,0 +1,36 @@
+# godot-guard configuration for hexstead (PedroNavHur/hexstead).
+paths: [scripts, tests, tools]
+exclude: [addons/**, .godot/**]
+limits:
+  cognitive: 6
+  cyclomatic: 12
+  file-lines: 300
+  comment-lines: 2
+  inputs: 8
+boundaries:
+  # Ported from tools/check_gdscript.py (domain-boundary), see AGENTS.md project boundaries.
+  - name: domain-boundary
+    paths:
+      - scripts/simulation/**
+      - scripts/combat/**
+      - scripts/construction/**
+      - scripts/core/**
+      - scripts/hex/**
+      - scripts/inventory/**
+      - scripts/jobs/**
+      - scripts/navigation/**
+      - scripts/power/**
+      - scripts/production/**
+      - scripts/saving/**
+    forbid:
+      - '\b(Texture2D|Sprite3D|Sprite2D|Control|Camera3D|Camera2D|Material|Label|Node3D|Node2D|StyleBox|Image|Viewport|CanvasLayer|Shader)\b'
+      - 'res://scenes/|res://assets/|res://scripts/(presentation|ui|main|input)/'
+    message: simulation code must not reference presentation, UI, or engine visual types
+gate:
+  format: true
+  lint: true
+  steps: [python3 tools/validate_structure.py]
+  import: true
+  analyzer: true
+  tests: [res://tests/run_tests.gd]
+  smoke: [--quit-after, "3"]

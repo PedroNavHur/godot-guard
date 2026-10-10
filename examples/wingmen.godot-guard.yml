@@ -1,0 +1,17 @@
+# godot-guard configuration for wingmen (PedroNavHur/heavenrest).
+paths: [core, scenes, ui, tests, tools]
+exclude: [addons/**, .godot/**]
+limits:
+  cognitive: 6
+  cyclomatic: 12
+  file-lines: 300
+  comment-lines: 2
+  inputs: 8
+gate:
+  format: true
+  lint: true
+  steps: []
+  import: true
+  analyzer: true
+  tests: [res://tests/run_tests.gd]
+  smoke: [--quit-after, "3"]
