@@ -10,14 +10,7 @@ func _initialize() -> void:
 	var excludes: Array[String] = []
 	_read_arguments(roots, excludes)
 	var paths: Array[String] = []
-	var missing := 0
-	for root_path: String in roots:
-		if not _collect_root(root_path, excludes, paths):
-			missing += 1
-			printerr("ANALYZER: root %s does not exist" % root_path)
-	if paths.is_empty():
-		missing += 1
-		printerr("ANALYZER: no scripts under %s" % ", ".join(roots))
+	var missing := _collect_roots(roots, excludes, paths)
 	paths.sort()
 	var failed := 0
 	for path: String in paths:
@@ -38,6 +31,19 @@ func _read_arguments(roots: Array[String], excludes: Array[String]) -> void:
 			excludes.append("res://" + arguments[index + 1])
 	if roots.is_empty():
 		roots.append("res://")
+
+
+## Returns how many roots were missing, plus one when they hold no scripts at all.
+func _collect_roots(roots: Array[String], excludes: Array[String], paths: Array[String]) -> int:
+	var missing := 0
+	for root_path: String in roots:
+		if not _collect_root(root_path, excludes, paths):
+			missing += 1
+			printerr("ANALYZER: root %s does not exist" % root_path)
+	if paths.is_empty():
+		missing += 1
+		printerr("ANALYZER: no scripts under %s" % ", ".join(roots))
+	return missing
 
 
 func _collect_root(root_path: String, excludes: Array[String], paths: Array[String]) -> bool:
