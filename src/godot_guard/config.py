@@ -110,22 +110,24 @@ def load(start: Path | None = None) -> Config:
     if not has_config:
         return config
     try:
-        data = yaml.safe_load((root / CONFIG_NAME).read_text(encoding="utf-8")) or {}
+        data = yaml.safe_load((root / CONFIG_NAME).read_text(encoding="utf-8"))
     except yaml.YAMLError as error:
         raise ConfigError(f"{CONFIG_NAME}: {error}") from error
-    apply(config, data)
+    apply(config, {} if data is None else data)
     return config
 
 
 def apply(config: Config, data) -> None:
     expect(isinstance(data, dict), "the file must be a mapping")
     unknown(data, DEFAULTS, "")
-    config.paths = [normalize(p) for p in string_list(data.get("paths", config.paths), "paths")]
-    config.exclude = [normalize(p) for p in string_list(data.get("exclude", config.exclude), "exclude")]
+    config.paths = [normalize(p) for p in string_list(given(data, "paths", config.paths), "paths")]
+    config.exclude = [normalize(p) for p in string_list(given(data, "exclude", config.exclude), "exclude")]
     config.limits.update(section(data, "limits"))
     config.rules.update({rule: level_of(value) for rule, value in section(data, "rules").items()})
     config.gate.update(section(data, "gate"))
-    config.boundaries = [boundary(entry) for entry in data.get("boundaries") or []]
+    entries = given(data, "boundaries", [])
+    expect(isinstance(entries, list), "boundaries must be a list")
+    config.boundaries = [boundary(entry) for entry in entries]
     validate(config)
 
 
@@ -143,11 +145,17 @@ def level_of(value):
     return value
 
 
+def given(data: dict, key: str, default):
+    """An omitted key or an explicit null takes the default; any other value is checked by the caller."""
+    value = data.get(key)
+    return default if value is None else value
+
+
 def section(data: dict, name: str) -> dict:
-    values = data.get(name) or {}
+    values = given(data, name, {})
     expect(isinstance(values, dict), f"{name} must be a mapping")
     unknown(values, DEFAULTS[name], f"{name}.")
-    return values
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def unknown(values: dict, known, prefix: str) -> None:
@@ -169,17 +177,17 @@ def boundary(entry) -> dict:
     expect(isinstance(entry, dict), "each boundary must be a mapping")
     for key in entry:
         expect(key in BOUNDARY_KEYS, f"unknown key 'boundaries.{key}'")
-    name = entry.get("name", "boundary")
-    for pattern in string_list(entry.get("forbid", []), f"boundary {name} forbid"):
+    name = given(entry, "name", "boundary")
+    for pattern in string_list(given(entry, "forbid", []), f"boundary {name} forbid"):
         try:
             re.compile(pattern)
         except re.error as error:
             raise ConfigError(f"{CONFIG_NAME}: boundary {name}: bad pattern {pattern!r}: {error}") from error
     return {
         "name": name,
-        "paths": string_list(entry.get("paths", []), f"boundary {name} paths"),
-        "forbid": string_list(entry.get("forbid", []), f"boundary {name} forbid"),
-        "message": str(entry.get("message", "")),
+        "paths": string_list(given(entry, "paths", []), f"boundary {name} paths"),
+        "forbid": string_list(given(entry, "forbid", []), f"boundary {name} forbid"),
+        "message": str(given(entry, "message", "")),
     }
 
 

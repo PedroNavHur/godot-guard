@@ -35,6 +35,25 @@ class ConfigTest(unittest.TestCase):
                 self.repo({}, text).config()
             self.assertIn(key, str(caught.exception))
 
+    def test_wrong_shapes_are_errors(self):
+        cases = (
+            ("false\n", "the file must be a mapping"), ("[]\n", "the file must be a mapping"),
+            ("limits: false\n", "limits must be a mapping"), ("rules: []\n", "rules must be a mapping"),
+            ("gate: 0\n", "gate must be a mapping"), ("boundaries: false\n", "boundaries must be a list"),
+            ("paths: false\n", "paths must be a list of strings"), ("exclude: {}\n", "exclude must be a list of strings"),
+        )
+        for text, message in cases:
+            with self.assertRaises(config_module.ConfigError, msg=text) as caught:
+                self.repo({}, text).config()
+            self.assertIn(message, str(caught.exception))
+
+    def test_null_takes_the_default(self):
+        text = "paths: null\nlimits: ~\nrules:\n  file-lines: null\ngate:\n  smoke: null\nboundaries:\n"
+        config = self.repo({}, text).config()
+        self.assertEqual((config.paths, config.limits["cognitive"]), (["."], 8))
+        self.assertEqual((config.rules["file-lines"], config.gate["smoke"], config.boundaries), ("error", ["--quit-after", "3"], []))
+        self.assertEqual(self.repo({}, "").config().paths, ["."])
+
     def test_bad_level_is_an_error(self):
         with self.assertRaises(config_module.ConfigError):
             self.repo({}, "rules:\n  file-lines: fatal\n").config()
