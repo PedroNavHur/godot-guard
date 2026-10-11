@@ -1,4 +1,4 @@
-# godot-guard v0.1 spec
+# godot-guard v0.2 spec
 
 godot-guard gives Godot 4 projects the guardrails Pedro's Next.js repositories
 get from oxlint, oxfmt, tsc, vitest, Husky, and CI (reference: govstructure's
@@ -310,7 +310,7 @@ Match hexstead's current workflow (timeouts, `use-dotnet: false`,
   `complexity_gdscript.py`'s, and interface totals equal
   `godot_interface.py`'s.
 
-## Out of scope for v0.1
+## Out of scope
 
 Scene (`.tscn`) checks, shader lint, a GUT/gdUnit migration, auto-fixing,
 publishing to PyPI.

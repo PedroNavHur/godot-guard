@@ -25,7 +25,7 @@ tsc, Husky, and CI, with a ratchet baseline so existing code can adopt them.
 In the game's `tools/requirements-lint.txt`, next to gdtoolkit:
 
 ```
-godot-guard @ git+https://github.com/PedroNavHur/godot-guard@v0.1.0
+godot-guard @ git+https://github.com/PedroNavHur/godot-guard@v0.2.0
 ```
 
 Then `python3 -m venv .venv && .venv/bin/pip install -r tools/requirements-lint.txt`.
