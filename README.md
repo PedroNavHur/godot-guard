@@ -37,6 +37,7 @@ PATH, or `/Applications/Godot.app`.
 ```
 godot-guard init                    # config, hooks, CI workflow, requirement line; never overwrites
 godot-guard check [FILE...]         # the rules, against the baseline
+godot-guard check --json [FILE...]  # the same verdict as one JSON object, for tools
 godot-guard baseline [--init [--force]]
 godot-guard format [FILE...]        # gdformat in write mode
 godot-guard run -- ARGS...          # Godot; fails on ERROR:, WARNING:, SCRIPT ERROR: lines
@@ -58,6 +59,13 @@ format, lint, check, extra steps, editor import, analyzer, tests, and a smoke
 run, timed per step.
 
 Output lines are `path:line: message (rule)`.
+
+`check --json` prints one JSON object instead: `version` (1), `root`, the
+effective `limits` and rule `levels`, the `files` it checked, and `problems`,
+each with `path`, `line`, `rule`, `level` (`error` or `warn`), and `message`.
+It exits as `check` does, and `skipping` notes stay on stderr. `version` rises
+only when a key is removed or changes meaning; new keys can appear without a
+bump. [SPEC.md](SPEC.md) has the details.
 
 ## Config: `.godot-guard.yml`
 

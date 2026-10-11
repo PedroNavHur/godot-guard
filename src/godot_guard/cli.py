@@ -19,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"godot-guard {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     check_parser = commands.add_parser("check", help="run the rules against the baseline")
+    check_parser.add_argument("--json", action="store_true", help="print one JSON object instead of text")
     check_parser.add_argument("files", nargs="*")
     baseline_parser = commands.add_parser("baseline", help="tighten the baseline, or --init it")
     baseline_parser.add_argument("--init", action="store_true", help="record every current violation")
@@ -50,7 +51,7 @@ def run_gate(config, args: argparse.Namespace) -> int:
 
 
 CONFIG_COMMANDS = {
-    "check": lambda config, args: check(config, args.files or None),
+    "check": lambda config, args: check(config, args.files or None, as_json=args.json),
     "baseline": lambda config, args: update_baseline(config, args.init, args.force),
     "format": lambda config, args: format_files(config, args.files),
     "gate": run_gate,

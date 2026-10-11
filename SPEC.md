@@ -179,6 +179,42 @@ Run from anywhere inside the repo; the root is the nearest directory holding
   not resolved), so a link cannot make a hidden or excluded argument
   eligible. Exit 1 on any error; warnings
   print but exit 0. End with a one-line summary: errors, warnings, files.
+- `godot-guard check --json [FILE...]`: the same selection, rules, baseline
+  judgment, and exit status as `check`, for tools that tag their own findings
+  with godot-guard's verdict. stdout is one JSON object and nothing else (no
+  summary line); `skipping` notes stay on stderr, and a config error prints
+  there and exits 2 with nothing on stdout.
+
+  ```json
+  {
+    "version": 1,
+    "root": "/absolute/path/to/the/root",
+    "limits": {"cognitive": 8, "cyclomatic": 16, "file-lines": 300, "comment-lines": 2, "inputs": 8},
+    "levels": {"cognitive-complexity": "error", "cyclomatic-complexity": "error", "file-lines": "error",
+               "long-comment": "error", "interface-cap": "error", "nested-ternary": "warn"},
+    "files": ["scripts/unit.gd"],
+    "problems": [
+      {"path": "scripts/unit.gd", "line": 12, "rule": "cognitive-complexity", "level": "error",
+       "message": "pick has cognitive complexity 9 (max 8)"}
+    ]
+  }
+  ```
+
+  `limits` and `levels` are the effective settings: the defaults with the
+  config file applied. `files` lists the repo-relative scripts actually
+  checked, after the hidden and `exclude` filters. `problems` holds every
+  problem `check` prints, in the same order, including stale, loose, and
+  missing baseline entries; `level` is `error` or `warn`, and `message` is the
+  text without the `warning: ` prefix and the rule. A complexity problem sits
+  on the function's first line and a long-comment problem on the comment's
+  first line; a loose long-comment entry sits on the file's first long comment,
+  and a missing entry on its line in the baseline file. Other file-rule
+  problems, and a stale long-comment entry, sit on line 1. `boundary` and
+  `parse-error` have no level setting and are always `error`.
+
+  `version` is the format's version. It rises only when a key is removed or
+  its meaning changes; new keys may appear without a bump, so readers ignore
+  keys they do not know and refuse a version they do not.
 - `godot-guard baseline [--init [--force]]`: as above.
 - `godot-guard format [FILE...]`: `gdformat` in write mode on the files or
   paths. For the pre-commit skill's format step.

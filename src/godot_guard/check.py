@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -9,6 +10,8 @@ from pathlib import Path
 from . import baseline
 from .config import BASELINE_NAME, Config, hidden, matches, walk_scripts
 from .rules import FileResult, Problem, Surfaces, analyze
+
+JSON_VERSION = 1
 
 
 def select(config: Config, files: list[str]) -> list[str]:
@@ -69,7 +72,8 @@ def problems_of(config: Config, results: list[FileResult], subset: set[str] | No
     return problems
 
 
-def check(config: Config, files: list[str] | None = None, surfaces: Surfaces | None = None) -> int:
+def check(config: Config, files: list[str] | None = None, surfaces: Surfaces | None = None,
+          as_json: bool = False) -> int:
     """Run the rules on `files` (every scanned script when None); 1 on any error.
 
     `surfaces` is the Resource map, read from the root's scripts when None.
@@ -77,13 +81,36 @@ def check(config: Config, files: list[str] | None = None, surfaces: Surfaces | N
     paths = config.scanned_files() if files is None else select(config, files)
     subset = None if files is None else set(paths)
     problems = problems_of(config, measure(config, paths, surfaces), subset)
-    for problem in sorted(problems, key=lambda p: (p.path, p.line, p.rule)):
+    problems.sort(key=lambda p: (p.path, p.line, p.rule))
+    if as_json:
+        print(json.dumps(report(config, paths, problems), indent=2))
+    else:
+        print_text(paths, problems)
+    return int(any(p.level == "error" for p in problems))
+
+
+def print_text(paths: list[str], problems: list[Problem]) -> None:
+    for problem in problems:
         prefix = "warning: " if problem.level == "warn" else ""
         print(f"{problem.path}:{problem.line}: {prefix}{problem.message} ({problem.rule})")
     errors = sum(1 for p in problems if p.level == "error")
     warnings = len(problems) - errors
     print(f"godot-guard check: {plural(errors, 'error')}, {plural(warnings, 'warning')}, {plural(len(paths), 'file')}")
-    return int(errors > 0)
+
+
+def report(config: Config, paths: list[str], problems: list[Problem]) -> dict:
+    """`check --json`: the effective settings, the checked files, and every problem `check` prints."""
+    return {
+        "version": JSON_VERSION,
+        "root": str(config.root),
+        "limits": dict(config.limits),
+        "levels": dict(config.rules),
+        "files": paths,
+        "problems": [
+            {"path": p.path, "line": p.line, "rule": p.rule, "level": p.level, "message": p.message}
+            for p in problems
+        ],
+    }
 
 
 def plural(count: int, noun: str) -> str:
