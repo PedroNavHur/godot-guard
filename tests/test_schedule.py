@@ -12,8 +12,8 @@ from pathlib import Path
 from unittest import mock
 
 import godot_guard
-from godot_guard import schedule
-from godot_guard.schedule import IMPORT, PREPARE, TEST, Step, isolation, run_concurrent, run_steps
+from godot_guard import schedule, tools
+from godot_guard.schedule import IMPORT, PREPARE, TEST, Step, interruptible, isolation, run_concurrent, run_steps
 from godot_guard.tools import CHILDREN, ToolError, write_line
 
 from .helpers import captured
@@ -170,11 +170,56 @@ class InterruptTest(unittest.TestCase):
     def test_stop_kills_live_children_and_refuses_new_ones(self):
         self.addCleanup(CHILDREN.resume)
         process = CHILDREN.start(["sleep", "30"], None, None, pipe=False)
-        CHILDREN.stop()
+        CHILDREN.stop(signal.SIGTERM)
         self.assertEqual(process.wait(timeout=5), -signal.SIGKILL)
         CHILDREN.finish(process)
         with self.assertRaises(ToolError):
             CHILDREN.start(["true"], None, None, pipe=False)
+
+    def test_a_signal_inside_a_spawn_kills_the_child_and_exits(self):
+        # The signal lands on this thread after Popen returns and before the child is registered.
+        spawned = []
+        real_popen = subprocess.Popen
+
+        def popen_then_signal(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            self.addCleanup(process.kill)
+            spawned.append(process)
+            signal.raise_signal(signal.SIGTERM)
+            return process
+
+        with mock.patch.object(tools.subprocess, "Popen", popen_then_signal):
+            with interruptible(), self.assertRaises(SystemExit) as caught:
+                CHILDREN.start(["sleep", "30"], None, None, pipe=False)
+        self.assertEqual(caught.exception.code, 128 + signal.SIGTERM)
+        self.assertEqual(spawned[0].wait(timeout=5), -signal.SIGKILL)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(spawned[0].pid, 0)
+
+    def test_a_stop_from_another_thread_waits_for_a_spawn_and_kills_its_child(self):
+        self.addCleanup(CHILDREN.resume)
+        spawned = []
+        inside, release = threading.Event(), threading.Event()
+        real_popen = subprocess.Popen
+
+        def popen_and_hold(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            self.addCleanup(process.kill)
+            spawned.append(process)
+            inside.set()
+            release.wait(5)
+            return process
+
+        with mock.patch.object(tools.subprocess, "Popen", popen_and_hold):
+            spawner = threading.Thread(target=CHILDREN.start, args=(["sleep", "30"], None, None, False))
+            spawner.start()
+            self.assertTrue(inside.wait(5))
+            stopper = threading.Thread(target=CHILDREN.stop, args=(signal.SIGTERM,))
+            stopper.start()
+            release.set()
+            spawner.join(5)
+            stopper.join(5)
+        self.assertEqual(spawned[0].wait(timeout=5), -signal.SIGKILL)
 
     def test_sigterm_kills_the_gate_children_and_exits_with_143(self):
         with tempfile.TemporaryDirectory() as temp:

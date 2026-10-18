@@ -64,27 +64,56 @@ class Children:
         self._lock = threading.RLock()  # a signal handler may run on the thread that holds it
         self._live: set[subprocess.Popen] = set()
         self._stopped = False
+        self._spawner: int | None = None  # the thread inside a spawn, if any
+        self._deferred: list[int] = []  # signals that arrived inside a spawn on that thread
 
     def start(self, command: list[str], cwd: Path | None, env: dict | None, pipe: bool) -> subprocess.Popen:
-        """Start `command` in its own session, so a kill reaches everything it started."""
+        """Start `command` in its own session, so a kill reaches everything it started.
+
+        The spawn holds the lock, so a stop from another thread waits until the child is registered and
+        then kills it. A signal on this thread can run its handler mid-spawn; `stop` defers that signal,
+        and it is raised again once the child is registered, so the handler kills and reaps the child.
+        """
         with self._lock:
             if self._stopped:
                 raise ToolError("interrupted; not starting another process")
-            process = subprocess.Popen(
-                command, cwd=cwd, env=env, start_new_session=True,
-                stdout=subprocess.PIPE if pipe else None,
-                stderr=subprocess.STDOUT if pipe else None,
-                text=True, errors="replace",
-            )
-            self._live.add(process)
+            self._spawner = threading.get_ident()
+            try:
+                process = subprocess.Popen(
+                    command, cwd=cwd, env=env, start_new_session=True,
+                    stdout=subprocess.PIPE if pipe else None,
+                    stderr=subprocess.STDOUT if pipe else None,
+                    text=True, errors="replace",
+                )
+                self._live.add(process)
+            finally:
+                self._spawner = None
+                self._raise_deferred()
         return process
 
-    def stop(self) -> None:
-        """Refuse new children and kill the live ones; `resume` lifts the refusal."""
+    def stop(self, signum: int) -> bool:
+        """Refuse new children, kill the live ones, and reap them; `resume` lifts the refusal.
+
+        Returns False, deferring `signum`, when this thread is mid-spawn: the spawn raises it once the child is
+        registered. Otherwise returns True.
+        """
         with self._lock:
+            if self._spawner == threading.get_ident():
+                self._deferred.append(signum)
+                return False
             self._stopped = True
-            for process in self._live:
+            live = list(self._live)
+            for process in live:
                 kill_session(process)
+        for process in live:
+            process.wait()
+        return True
+
+    def _raise_deferred(self) -> None:
+        """Raise the signals that arrived mid-spawn, now that the spawn is over."""
+        signums, self._deferred = self._deferred, []
+        for signum in signums:
+            signal.raise_signal(signum)
 
     def resume(self) -> None:
         with self._lock:

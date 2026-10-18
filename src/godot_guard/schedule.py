@@ -160,7 +160,8 @@ def install_stop_handlers() -> dict[int, object]:
     """Install the stop handler; returns the handlers it replaced, keyed by signal number."""
 
     def stop(signum: int, frame: object) -> None:
-        CHILDREN.stop()
-        raise SystemExit(128 + signum)
+        # A stop deferred past a spawn on this thread is raised again later, so only the raise here exits.
+        if CHILDREN.stop(signum):
+            raise SystemExit(128 + signum)
 
     return {number: signal.signal(number, stop) for number in (signal.SIGINT, signal.SIGTERM)}
