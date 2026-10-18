@@ -244,6 +244,20 @@ class ShardedTestsTest(ShimTest):
         ])
         self.assertIn("== tests res://tests/run_tests.gd [2/2]", output)
 
+    def test_a_mapping_with_one_shard_passes_the_argument_and_a_string_does_not(self):
+        self.repo.write(".godot-guard.yml", (
+            "gate:\n  format: false\n  lint: false\n  import: false\n  analyzer: false\n  smoke: false\n"
+            "  tests: [res://tests/plain.gd, {script: res://tests/one.gd, shards: 1}]\n"
+        ))
+        status, output = captured(gate_module.gate, self.repo.config(), False, False, [])
+        self.assertEqual(status, 0, output)
+        root = str(self.repo.root)
+        self.assertEqual(self.calls(), [
+            f"godot --headless --path {root} --script res://tests/plain.gd",
+            f"godot --headless --path {root} --script res://tests/one.gd -- --shard=1/1",
+        ])
+        self.assertIn("== tests res://tests/one.gd [1/1]", output)
+
 
 class DirectoryArgumentTest(ShimTest):
     def setUp(self):

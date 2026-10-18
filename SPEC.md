@@ -277,8 +277,9 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     of at least 1) runs N processes, the I-th with `-- --shard=I/N` after its
     `--script` arguments, for I from 1 to N. Each is a step named `tests
     res://... [I/N]`. Splitting the tests is the runner's job; the runner reads
-    the argument with `OS.get_cmdline_user_args()`. With N = 1 the entry runs
-    as a string entry does: one process, no argument.
+    the argument with `OS.get_cmdline_user_args()`. N = 1 is still a sharded
+    entry: one process with `-- --shard=1/1`. Only a plain string entry, which
+    has no `shards` key, passes no argument.
   - The analyzer step loads every scanned script headless, as hexstead's
     `tools/lint_gdscript.gd` does. Ship that script as package data and
     run it without writing into the repository; verify how Godot 4.7.1

@@ -47,8 +47,8 @@ def test_steps(tests: list[TestScript]) -> list[tuple[str, list[str]]]:
 
 
 def script_steps(test: TestScript) -> list[tuple[str, list[str]]]:
-    """One step for a script; a sharded script gets one per shard, each passed `-- --shard=I/N`."""
-    if test.shards == 1:
+    """One step for a plain script; a script with `shards`, even 1, gets one per shard, each passed `-- --shard=I/N`."""
+    if test.shards is None:
         return [(f"tests {test.script}", ["--script", test.script])]
     return [
         (f"tests {test.script} [{shard}/{test.shards}]", ["--script", test.script, "--", f"--shard={shard}/{test.shards}"])

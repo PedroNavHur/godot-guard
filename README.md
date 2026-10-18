@@ -92,8 +92,10 @@ gate:
     - {script: res://tests/run_scenes.gd, shards: 4}
 ```
 
-A sharded entry runs one Godot process per shard, each with `-- --shard=I/N`
-after its script (I from 1 to N). Its steps are named like
+A mapping entry with `shards` runs one Godot process per shard, each with
+`-- --shard=I/N` after its script (I from 1 to N). That holds at `shards: 1`
+too, which passes `-- --shard=1/1`; a plain string entry passes no argument.
+Its steps are named like
 `tests res://tests/run_scenes.gd [2/4]`. The package does not split the tests:
 the runner must read the argument and run only its share. A runner that ignores
 it runs every test N times. A runner reads the argument with

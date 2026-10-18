@@ -125,12 +125,23 @@ class ConfigTest(unittest.TestCase):
             self.assertIn("gate.jobs must be a whole number of at least 1, or auto", str(caught.exception))
 
     def test_test_entries_are_scripts_or_sharded_mappings(self):
-        text = "gate:\n  tests:\n    - res://tests/a.gd\n    - script: res://tests/b.gd\n      shards: 3\n    - script: res://tests/c.gd\n"
+        text = (
+            "gate:\n  tests:\n    - res://tests/a.gd\n    - script: res://tests/b.gd\n      shards: 3\n"
+            "    - script: res://tests/c.gd\n    - script: res://tests/d.gd\n      shards: 1\n"
+            "    - script: res://tests/e.gd\n      shards: null\n"
+        )
         self.assertEqual(self.repo({}, text).config().gate["tests"], [
             config_module.TestScript("res://tests/a.gd"),
             config_module.TestScript("res://tests/b.gd", 3),
             config_module.TestScript("res://tests/c.gd"),
+            config_module.TestScript("res://tests/d.gd", 1),
+            config_module.TestScript("res://tests/e.gd"),
         ])
+
+    def test_shards_one_is_kept_apart_from_no_shards(self):
+        plain, one = self.repo({}, "gate: {tests: [res://a.gd, {script: res://a.gd, shards: 1}]}\n").config().gate["tests"]
+        self.assertIsNone(plain.shards)
+        self.assertEqual(one.shards, 1)
 
     def test_bad_test_entries_are_errors(self):
         shards = "gate.tests shards must be a whole number of at least 1"

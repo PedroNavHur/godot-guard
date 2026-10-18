@@ -51,10 +51,10 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class TestScript:
-    """A `gate.tests` entry: a res:// script, run as `shards` Godot processes numbered 1 to `shards`."""
+    """A `gate.tests` entry: a res:// script. `shards` None is a plain entry; a count runs that many Godot processes, numbered 1 to it."""
 
     script: str
-    shards: int = 1
+    shards: int | None = None
 
 
 class StrictLoader(yaml.SafeLoader):
@@ -228,8 +228,8 @@ def script_entry(entry) -> TestScript:
     unknown(entry, TEST_KEYS, "gate.tests.")
     script = given(entry, "script", None)
     expect(isinstance(script, str), "gate.tests script must be a string")
-    shards = given(entry, "shards", 1)
-    expect(whole_count(shards), "gate.tests shards must be a whole number of at least 1")
+    shards = given(entry, "shards", None)
+    expect(shards is None or whole_count(shards), "gate.tests shards must be a whole number of at least 1")
     return TestScript(script, shards)
 
 
