@@ -144,6 +144,13 @@ class IsolationTest(unittest.TestCase):
         with isolation(fake("lint")) as env:
             self.assertIsNone(env)
 
+    def test_godot_import_gets_no_environment_even_on_a_pool(self):
+        seen = []
+        step = Step("import", IMPORT, lambda echo, env: seen.append(env) or 0, godot=True)
+        status, _ = captured(run_steps, [step], 2)
+        self.assertEqual(status, 0)
+        self.assertEqual(seen, [None])
+
     def test_godot_steps_in_a_phase_get_their_own_dirs(self):
         seen = []
 

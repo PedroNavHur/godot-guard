@@ -129,8 +129,11 @@ def run_step(step: Step, echo: Echo | None, env: dict | None) -> int:
 
 @contextmanager
 def isolation(step: Step) -> Iterator[dict | None]:
-    """For a Godot step, an environment with a fresh user-data dir, removed afterwards. Other steps get none."""
-    if not step.godot:
+    """For a Godot test step, an environment with a fresh user-data dir, removed afterwards. Other steps get none.
+
+    Only TEST steps run beside each other; IMPORT runs alone and keeps the inherited environment.
+    """
+    if not (step.godot and step.phase == TEST):
         yield None
         return
     with tempfile.TemporaryDirectory(prefix="godot-guard-") as temp:
