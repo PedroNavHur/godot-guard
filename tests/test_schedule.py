@@ -176,6 +176,13 @@ class InterruptTest(unittest.TestCase):
         with self.assertRaises(ToolError):
             CHILDREN.start(["true"], None, None, pipe=False)
 
+    def test_reap_waits_for_the_children_a_stop_killed(self):
+        self.addCleanup(CHILDREN.resume)
+        process = CHILDREN.start(["sleep", "30"], None, None, pipe=False)
+        CHILDREN.stop(signal.SIGTERM)
+        CHILDREN.reap()
+        self.assertEqual(process.returncode, -signal.SIGKILL)
+
     def test_a_signal_inside_a_spawn_kills_the_child_and_exits(self):
         # The signal lands on this thread after Popen returns and before the child is registered.
         spawned = []
@@ -222,31 +229,45 @@ class InterruptTest(unittest.TestCase):
         self.assertEqual(spawned[0].wait(timeout=5), -signal.SIGKILL)
 
     def test_sigterm_kills_the_gate_children_and_exits_with_143(self):
-        with tempfile.TemporaryDirectory() as temp:
-            pidfile = Path(temp) / "pid"
-            runner = subprocess.Popen(
-                [sys.executable, "-c", RUNNER, str(pidfile)],
-                env=dict(os.environ, PYTHONPATH=str(Path(godot_guard.__file__).parents[1])),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-            self.addCleanup(runner.kill)
-            pid = wait_for_pid(pidfile)
-            runner.send_signal(signal.SIGTERM)
-            self.assertEqual(runner.wait(timeout=20), 128 + signal.SIGTERM)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(pid, 0)
+        stop_gate_mid_step(self, signal.SIGTERM, jobs=2)
 
 
-# A gate whose one step runs `sleep 30` and records its pid; the runner is killed by SIGTERM mid-step.
+class SerialStopTest(unittest.TestCase):
+    # With one job the step's wait() runs on the main thread, so the stop handler interrupts a blocked wait().
+    def test_sigint_mid_step_exits_130_and_kills_the_step(self):
+        stop_gate_mid_step(self, signal.SIGINT, jobs=1)
+
+    def test_sigterm_mid_step_exits_143_and_kills_the_step(self):
+        stop_gate_mid_step(self, signal.SIGTERM, jobs=1)
+
+
+def stop_gate_mid_step(test: unittest.TestCase, signum: int, jobs: int) -> None:
+    """Run a gate whose step is mid-`sleep 30`, send it `signum`, and check it exits and its step's group is gone."""
+    with tempfile.TemporaryDirectory() as temp:
+        pidfile = Path(temp) / "pid"
+        runner = subprocess.Popen(
+            [sys.executable, "-c", RUNNER, str(pidfile), str(jobs)],
+            env=dict(os.environ, PYTHONPATH=str(Path(godot_guard.__file__).parents[1])),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        test.addCleanup(runner.kill)
+        pid = wait_for_pid(pidfile)
+        test.addCleanup(kill_group, pid)  # the step's session leader is the child's pid
+        runner.send_signal(signum)
+        test.assertEqual(runner.wait(timeout=5), 128 + signum)
+    test.assertFalse(group_alive(pid))
+
+
+# A gate whose one step runs `sleep 30` in its own session and records its pid.
 RUNNER = """
 import sys
 from godot_guard.schedule import PREPARE, Step, run_steps
 from godot_guard.tools import run_process
 
-pidfile = sys.argv[1]
+pidfile, jobs = sys.argv[1], int(sys.argv[2])
 hang = Step("hang", PREPARE, lambda echo, env: run_process(
     ["sh", "-c", 'echo $$ > "$1"; exec sleep 30', "sh", pidfile], None, None, echo))
-sys.exit(run_steps([hang], 2))
+sys.exit(run_steps([hang], jobs))
 """
 
 
@@ -257,6 +278,22 @@ def wait_for_pid(pidfile: Path) -> int:
             raise AssertionError("the runner never started its child")
         time.sleep(0.05)
     return int(pidfile.read_text())
+
+
+def group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def kill_group(pgid: int) -> None:
+    # macOS answers EPERM, not ESRCH, for a group whose only member is an unreaped zombie.
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 if __name__ == "__main__":
