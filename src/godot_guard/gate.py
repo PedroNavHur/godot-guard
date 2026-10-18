@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .check import check, select
 from .config import Config, TestScript
+from .jobs import worker_count
 from .rules import Surfaces
 from .schedule import IMPORT, PREPARE, TEST, Step, run_steps
 from .snapshot import indexed, snapshot, staged
@@ -99,7 +100,7 @@ def run_gate(config: Config, chosen: list[str] | None, fast: bool, sources: Conf
     if chosen == [] and fast:
         print("godot-guard gate: no GDScript files selected")
         return 0
-    return run_steps(steps_for(config, chosen, fast, sources))
+    return run_steps(steps_for(config, chosen, fast, sources), worker_count(config.gate["jobs"]))
 
 
 def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:

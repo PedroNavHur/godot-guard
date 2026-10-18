@@ -6,6 +6,8 @@ import math
 import os
 from pathlib import Path
 
+from .config import AUTO
+
 CGROUP_ROOT = Path("/sys/fs/cgroup")
 PROC_CGROUP = Path("/proc/self/cgroup")
 
@@ -54,3 +56,8 @@ def auto_jobs(root: Path = CGROUP_ROOT, proc_cgroup: Path = PROC_CGROUP) -> int:
     path = own_cgroup(proc_cgroup)
     limits = cpu_limits(root, path) if path is not None else []
     return max(1, min([usable_cpus(), *limits]))
+
+
+def worker_count(value: int | str) -> int:
+    """The worker count for a `gate.jobs` value: a whole number, or `auto` for this process's CPU budget."""
+    return auto_jobs() if value == AUTO else int(value)

@@ -61,12 +61,15 @@ class Children:
     """Live child processes, so that a stopped gate leaves none running."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # a signal handler may run on the thread that holds it
         self._live: set[subprocess.Popen] = set()
+        self._stopped = False
 
     def start(self, command: list[str], cwd: Path | None, env: dict | None, pipe: bool) -> subprocess.Popen:
         """Start `command` in its own session, so a kill reaches everything it started."""
         with self._lock:
+            if self._stopped:
+                raise ToolError("interrupted; not starting another process")
             process = subprocess.Popen(
                 command, cwd=cwd, env=env, start_new_session=True,
                 stdout=subprocess.PIPE if pipe else None,
@@ -75,6 +78,17 @@ class Children:
             )
             self._live.add(process)
         return process
+
+    def stop(self) -> None:
+        """Refuse new children and kill the live ones; `resume` lifts the refusal."""
+        with self._lock:
+            self._stopped = True
+            for process in self._live:
+                kill_session(process)
+
+    def resume(self) -> None:
+        with self._lock:
+            self._stopped = False
 
     def finish(self, process: subprocess.Popen) -> None:
         """Forget `process`; if it is still running (its reader raised), kill it and reap it."""
