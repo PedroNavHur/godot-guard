@@ -96,11 +96,28 @@ def absolute(config: Config, chosen: list[str] | None) -> list[str] | None:
     return [str(config.root / path) for path in chosen]
 
 
+def warm_parser_cache() -> None:
+    """Build gdtoolkit's parsers once, serially, so the parallel PREPARE steps only read its cache.
+
+    gdtoolkit 4.5.0 makes its versioned cache directory with exists() then makedirs() and no exist_ok,
+    and writes each parser's pickle in place. Cold starts that overlap (gdformat, gdlint, and check's
+    in-process parser) can collide on both. One parse here creates the directory and every pickle first.
+    """
+    from gdtoolkit.parser import parser
+
+    parser.parse("", gather_metadata=True)
+    parser.parse("")
+    parser.parse_comments("")
+
+
 def run_gate(config: Config, chosen: list[str] | None, fast: bool, sources: Config | None = None) -> int:
     if chosen == [] and fast:
         print("godot-guard gate: no GDScript files selected")
         return 0
-    return run_steps(steps_for(config, chosen, fast, sources), worker_count(config.gate["jobs"]))
+    jobs = worker_count(config.gate["jobs"])
+    if jobs > 1:
+        warm_parser_cache()
+    return run_steps(steps_for(config, chosen, fast, sources), jobs)
 
 
 def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:

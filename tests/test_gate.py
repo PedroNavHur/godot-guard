@@ -5,6 +5,8 @@ import io
 import os
 import stat
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -258,6 +260,27 @@ class ShardedTestsTest(ShimTest):
         ])
         self.assertIn("== tests res://tests/one.gd [1/1]", output)
 
+
+class ParserWarmupTest(ShimTest):
+    def test_only_a_parallel_gate_warms_the_parser_cache(self):
+        for jobs, warmed in ((1, False), (2, True)):
+            self.repo.write(".godot-guard.yml", f"gate: {{jobs: {jobs}}}\n")
+            with self.subTest(jobs=jobs), mock.patch.object(gate_module, "warm_parser_cache") as warm:
+                captured(gate_module.gate, self.repo.config(), True, False, [])
+                self.assertEqual(warm.called, warmed)
+
+
+class ParserCacheTest(unittest.TestCase):
+    def test_a_cold_cache_gets_its_directory_and_every_pickle(self):
+        # A fresh HOME is a cold cache. The warm-up runs in a child, since ShimTest patches sys.executable.
+        with tempfile.TemporaryDirectory() as home:
+            code = "from godot_guard.gate import warm_parser_cache; warm_parser_cache()"
+            subprocess.run(
+                [sys.executable, "-c", code], check=True, timeout=120,
+                env=dict(os.environ, HOME=home, PYTHONPATH=str(Path(gate_module.__file__).parents[1])),
+            )
+            pickles = sorted(path.name for path in Path(home).rglob("*.pickle"))
+        self.assertEqual(pickles, ["parser.pickle", "parser_comments.pickle", "parser_with_metadata.pickle"])
 
 class DirectoryArgumentTest(ShimTest):
     def setUp(self):
