@@ -69,8 +69,9 @@ gate:
   steps: []               # extra shell commands, run from the repo root, before Godot
   import: true            # godot --headless --editor --quit
   analyzer: true          # load every scanned script headless
-  tests: []               # res:// scripts run with --script, in order
+  tests: []               # res:// scripts, or {script, shards}: run with --script, in order
   smoke: [--quit-after, "3"]   # args for a main-scene run; [] or false skips it
+  jobs: 1                 # gate workers: a whole number of at least 1, or auto
 ```
 
 Unknown keys are errors (catch typos), and so is a key repeated in one
@@ -222,7 +223,7 @@ Run from anywhere inside the repo; the root is the nearest directory holding
   stream output, and fail when Godot exits non-zero or prints a line
   containing `SCRIPT ERROR:` or starting with `ERROR:` or `WARNING:`. This is
   hexstead's `tools/check_godot_output.py`.
-- `godot-guard gate [--fast] [--staged | FILE...]`:
+- `godot-guard gate [--fast] [--staged | FILE...] [--jobs N|auto]`:
   - `--fast` (pre-commit): `gdformat --check`, `gdlint`, and `check` on the
     selected files only. `--staged` selects the scanned `.gd` files added,
     copied, modified, renamed, or retyped in the index (`git diff --cached
@@ -247,6 +248,38 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     stopping at the first failure: format, lint, check, steps, import,
     analyzer, tests, smoke. Godot steps go through `run`. Print a header per
     step and the elapsed seconds per step.
+  - Jobs: `gate.jobs` sets the worker count, and `--jobs` overrides it for
+    the run. A whole number is used as is; `auto` is the usable CPUs (the
+    affinity mask's size where `os.sched_getaffinity` exists, else
+    `os.cpu_count()`), lowered to the tightest `cpu.max` quota on the
+    process's cgroup v2 path and its ancestors (the path is the `0::` line of
+    `/proc/self/cgroup`; `max` means no limit; a quota rounds up to whole
+    CPUs). It is never below 1.
+  - With 1 job the order and output above hold exactly, streamed. With more,
+    each phase runs on a pool of at most that many workers, and the phases run
+    in order: (1) format, lint, check, and `steps`; (2) import, alone; (3)
+    analyzer, every test process, and smoke. Within a phase the config order
+    is the schedule. Check runs in a thread.
+  - A step in a parallel phase has its output captured and printed as one
+    block when it finishes: `== NAME`, the output, then `== NAME passed in Xs`
+    or `== NAME failed after Xs`. On the first failure in a phase no new step
+    starts, running steps finish and print, every failed step is named in a
+    `== failed: NAME, ...` line, and the gate exits 1 without running later
+    phases.
+  - Each Godot process in a parallel phase gets a fresh user-data directory,
+    removed when it finishes. `XDG_DATA_HOME` names it on every platform; on
+    macOS `HOME` names it too, because Godot's user directory there follows
+    `HOME` (`CFFIXED_USER_HOME` and `XDG_DATA_HOME` do not move it). Serial
+    runs keep the inherited environment.
+  - SIGINT and SIGTERM stop the gate: every child process session is killed,
+    no new child starts, and the gate exits with 128 plus the signal number.
+  - Sharded test entries: `{script: res://..., shards: N}` (N a whole number
+    of at least 1) runs N processes, the I-th with `-- --shard=I/N` after its
+    `--script` arguments, for I from 1 to N. Each is a step named `tests
+    res://... [I/N]`. Splitting the tests is the runner's job; the runner reads
+    the argument with `OS.get_cmdline_user_args()`. N = 1 is still a sharded
+    entry: one process with `-- --shard=1/1`. Only a plain string entry, which
+    has no `shards` key, passes no argument.
   - The analyzer step loads every scanned script headless, as hexstead's
     `tools/lint_gdscript.gd` does. Ship that script as package data and
     run it without writing into the repository; verify how Godot 4.7.1
@@ -302,7 +335,14 @@ Match hexstead's current workflow (timeouts, `use-dotnet: false`,
   Resource exclusion through a two-level `class_name` chain).
 - Baseline: new violation, worsened, stale, loose, missing function,
   `baseline` tightening, `--init` refusal, subset checking.
-- Config: defaults, unknown key, rule off, warn level.
+- Config: defaults, unknown key, rule off, warn level, `gate.jobs` and
+  sharded `gate.tests` entries (including their error messages).
+- Jobs: cgroup v2 CPU budget from a fake root (rounding, tightest ancestor,
+  `max`, never below 1).
+- Schedule: phase order, at most `jobs` steps at once (a barrier proves
+  overlap), framed output blocks, fail-fast, Godot isolation environment and
+  its cleanup, and a SIGTERM to a running gate that leaves no child alive.
+- CLI: `--jobs` parsing and its override of `gate.jobs`.
 - `gate --fast --staged` in a temp git repo with a fake gdformat/gdlint
   (PATH shims), and `run` with a fake Godot that prints `WARNING:` and exits 0.
 - Parity (skipped unless `GODOT_GUARD_PARITY_REPOS` lists repo paths): for

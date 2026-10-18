@@ -5,13 +5,24 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from . import __version__, config as config_module
 from .check import check, select, update_baseline
+from .config import AUTO
 from .gate import gate
 from .scaffold import init
 from .tools import ToolError, gdtoolkit, run_godot
+
+
+def jobs_argument(value: str) -> int | str:
+    """`--jobs`: a whole number of at least 1, or `auto`."""
+    if value == AUTO:
+        return AUTO
+    if value.isascii() and value.isdigit() and int(value) >= 1:
+        return int(value)
+    raise argparse.ArgumentTypeError(f"must be a whole number of at least 1, or {AUTO}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser = commands.add_parser("gate", help="the quality gate")
     gate_parser.add_argument("--fast", action="store_true", help="format, lint, and check only")
     gate_parser.add_argument("--staged", action="store_true", help="select staged .gd files")
+    gate_parser.add_argument("--jobs", type=jobs_argument, metavar="N|auto",
+                             help="run steps in parallel on N workers, or auto; overrides gate.jobs")
     gate_parser.add_argument("files", nargs="*")
     commands.add_parser("init", help="scaffold config, hooks, and CI")
     return parser
@@ -47,6 +60,8 @@ def format_files(config, files: list[str]) -> int:
 def run_gate(config, args: argparse.Namespace) -> int:
     if args.staged and args.files:
         raise SystemExit("godot-guard gate: pass --staged or files, not both")
+    if args.jobs is not None:
+        config = replace(config, gate={**config.gate, "jobs": args.jobs})
     return gate(config, args.fast, args.staged, args.files)
 
 

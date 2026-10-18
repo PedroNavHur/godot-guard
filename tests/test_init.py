@@ -25,7 +25,7 @@ class InitTest(unittest.TestCase):
         self.assertEqual(status, 0)
         root = self.repo.root
         config = config_module.load(root)
-        self.assertEqual(config.gate["tests"], ["res://tests/run_tests.gd"])
+        self.assertEqual(config.gate["tests"], [config_module.TestScript("res://tests/run_tests.gd")])
         self.assertTrue(os.access(root / ".githooks" / "pre-commit", os.X_OK))
         self.assertIn("gate --fast --staged", (root / ".githooks" / "pre-commit").read_text())
         self.assertIn("version: 4.7.1", (root / ".github" / "workflows" / "quality.yml").read_text())

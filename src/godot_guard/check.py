@@ -10,6 +10,7 @@ from pathlib import Path
 from . import baseline
 from .config import BASELINE_NAME, Config, hidden, matches, walk_scripts
 from .rules import FileResult, Problem, Surfaces, analyze
+from .tools import Echo, write_line
 
 JSON_VERSION = 1
 
@@ -73,29 +74,29 @@ def problems_of(config: Config, results: list[FileResult], subset: set[str] | No
 
 
 def check(config: Config, files: list[str] | None = None, surfaces: Surfaces | None = None,
-          as_json: bool = False) -> int:
+          as_json: bool = False, echo: Echo | None = None) -> int:
     """Run the rules on `files` (every scanned script when None); 1 on any error.
 
-    `surfaces` is the Resource map, read from the root's scripts when None.
+    `surfaces` is the Resource map, read from the root's scripts when None. Output goes to `echo`, or stdout.
     """
     paths = config.scanned_files() if files is None else select(config, files)
     subset = None if files is None else set(paths)
     problems = problems_of(config, measure(config, paths, surfaces), subset)
     problems.sort(key=lambda p: (p.path, p.line, p.rule))
     if as_json:
-        print(json.dumps(report(config, paths, problems), indent=2))
+        write_line(echo, json.dumps(report(config, paths, problems), indent=2))
     else:
-        print_text(paths, problems)
+        print_text(paths, problems, echo)
     return int(any(p.level == "error" for p in problems))
 
 
-def print_text(paths: list[str], problems: list[Problem]) -> None:
+def print_text(paths: list[str], problems: list[Problem], echo: Echo | None = None) -> None:
     for problem in problems:
         prefix = "warning: " if problem.level == "warn" else ""
-        print(f"{problem.path}:{problem.line}: {prefix}{problem.message} ({problem.rule})")
+        write_line(echo, f"{problem.path}:{problem.line}: {prefix}{problem.message} ({problem.rule})")
     errors = sum(1 for p in problems if p.level == "error")
     warnings = len(problems) - errors
-    print(f"godot-guard check: {plural(errors, 'error')}, {plural(warnings, 'warning')}, {plural(len(paths), 'file')}")
+    write_line(echo, f"godot-guard check: {plural(errors, 'error')}, {plural(warnings, 'warning')}, {plural(len(paths), 'file')}")
 
 
 def report(config: Config, paths: list[str], problems: list[Problem]) -> dict:

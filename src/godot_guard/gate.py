@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-import subprocess
-import time
 from pathlib import Path
 
 from .check import check, select
-from .config import Config
+from .config import Config, TestScript
+from .jobs import worker_count
 from .rules import Surfaces
+from .schedule import IMPORT, PREPARE, TEST, Step, run_steps
 from .snapshot import indexed, snapshot, staged
-from .tools import ToolError, gdtoolkit, run_godot
+from .tools import Echo, gdtoolkit, run_godot, run_process
 
 ANALYZER = Path(__file__).parent / "data" / "analyze_scripts.gd"
 
 
-def gdtool(name: str, args: list[str], files: list[str], config: Config) -> int:
+def gdtool(name: str, args: list[str], files: list[str], config: Config, echo: Echo | None) -> int:
     if not files:
         return 0
-    return subprocess.run([gdtoolkit(name), *args, *files], cwd=config.root).returncode
+    return run_process([gdtoolkit(name), *args, *files], config.root, None, echo)
 
 
 def res_path(path: str) -> str:
@@ -36,31 +36,48 @@ def godot_steps(config: Config) -> list[tuple[str, list[str]]]:
         roots = [arg for path in config.paths for arg in ("--root", res_path(path))]
         excludes = [arg for pattern in config.exclude for arg in ("--exclude", pattern)]
         steps.append(("analyzer", ["--script", str(ANALYZER), "--", *roots, *excludes]))
-    steps += [(f"tests {script}", ["--script", script]) for script in gate["tests"]]
+    steps += test_steps(gate["tests"])
     if gate["smoke"]:
         steps.append(("smoke", list(gate["smoke"])))
     return steps
 
 
+def test_steps(tests: list[TestScript]) -> list[tuple[str, list[str]]]:
+    return [step for test in tests for step in script_steps(test)]
+
+
+def script_steps(test: TestScript) -> list[tuple[str, list[str]]]:
+    """One step for a plain script; a script with `shards`, even 1, gets one per shard, each passed `-- --shard=I/N`."""
+    if test.shards is None:
+        return [(f"tests {test.script}", ["--script", test.script])]
+    return [
+        (f"tests {test.script} [{shard}/{test.shards}]", ["--script", test.script, "--", f"--shard={shard}/{test.shards}"])
+        for shard in range(1, test.shards + 1)
+    ]
+
+
 def steps_for(
     config: Config, chosen: list[str] | None, fast: bool, sources: Config | None = None
-) -> list[tuple[str, object]]:
+) -> list[Step]:
     """`chosen` are the selected scripts, or None for every scanned one; `sources` roots the copy they are read from."""
     sources = sources or config
     files = sources.scanned_files() if chosen is None else chosen
     gate, steps = config.gate, []
     if gate["format"]:
-        steps.append(("format", lambda: gdtool("gdformat", ["--check"], files, sources)))
+        steps.append(Step("format", PREPARE, lambda echo, env: gdtool("gdformat", ["--check"], files, sources, echo)))
     if gate["lint"]:
-        steps.append(("lint", lambda: gdtool("gdlint", [], files, sources)))
-    steps.append(("check", lambda: check(sources, absolute(sources, chosen), resource_map(config, sources, chosen))))
+        steps.append(Step("lint", PREPARE, lambda echo, env: gdtool("gdlint", [], files, sources, echo)))
+    steps.append(Step("check", PREPARE, lambda echo, env: check(
+        sources, absolute(sources, chosen), resource_map(config, sources, chosen), echo=echo)))
     if fast:
         return steps
     for command in gate["steps"]:
-        steps.append((command, lambda c=command: subprocess.run(c, shell=True, cwd=config.root).returncode))
+        steps.append(Step(command, PREPARE, lambda echo, env, c=command: run_process(["/bin/sh", "-c", c], config.root, None, echo)))
     root = str(config.root)
     for name, args in godot_steps(config):
-        steps.append((name, lambda a=args: run_godot(["--headless", "--path", root, *a])))
+        phase = IMPORT if name == "import" else TEST
+        steps.append(Step(name, phase, lambda echo, env, a=args: run_godot(
+            ["--headless", "--path", root, *a], echo=echo, env=env), godot=True))
     return steps
 
 
@@ -73,36 +90,34 @@ def resource_map(config: Config, sources: Config, chosen: list[str] | None) -> S
     return surfaces
 
 
-def run_steps(steps: list[tuple[str, object]]) -> int:
-    started = time.monotonic()
-    for name, action in steps:
-        print(f"== {name}", flush=True)
-        began = time.monotonic()
-        try:
-            status = action()
-        except ToolError as error:
-            print(f"godot-guard: {error}")
-            status = 127
-        elapsed = time.monotonic() - began
-        if status:
-            print(f"== {name} failed after {elapsed:.1f}s", flush=True)
-            return 1
-        print(f"== {name} passed in {elapsed:.1f}s", flush=True)
-    print(f"gate passed in {time.monotonic() - started:.1f}s")
-    return 0
-
-
 def absolute(config: Config, chosen: list[str] | None) -> list[str] | None:
     if chosen is None:
         return None
     return [str(config.root / path) for path in chosen]
 
 
+def warm_parser_cache() -> None:
+    """Build gdtoolkit's parsers once, serially, so the parallel PREPARE steps only read its cache.
+
+    gdtoolkit 4.5.0 makes its versioned cache directory with exists() then makedirs() and no exist_ok,
+    and writes each parser's pickle in place. Cold starts that overlap (gdformat, gdlint, and check's
+    in-process parser) can collide on both. One parse here creates the directory and every pickle first.
+    """
+    from gdtoolkit.parser import parser
+
+    parser.parse("", gather_metadata=True)
+    parser.parse("")
+    parser.parse_comments("")
+
+
 def run_gate(config: Config, chosen: list[str] | None, fast: bool, sources: Config | None = None) -> int:
     if chosen == [] and fast:
         print("godot-guard gate: no GDScript files selected")
         return 0
-    return run_steps(steps_for(config, chosen, fast, sources))
+    jobs = worker_count(config.gate["jobs"])
+    if jobs > 1:
+        warm_parser_cache()
+    return run_steps(steps_for(config, chosen, fast, sources), jobs)
 
 
 def gate(config: Config, fast: bool, use_staged: bool, files: list[str]) -> int:
