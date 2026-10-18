@@ -53,6 +53,10 @@ def write_stdout(text: str) -> None:
     print(text, end="", flush=True)
 
 
+def write_line(echo: Echo | None, line: str) -> None:
+    (echo or write_stdout)(line + "\n")
+
+
 class Children:
     """Live child processes, so that a stopped gate leaves none running."""
 

@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-import subprocess
-import time
 from pathlib import Path
 
 from .check import check, select
 from .config import Config, TestScript
 from .rules import Surfaces
+from .schedule import IMPORT, PREPARE, TEST, Step, run_steps
 from .snapshot import indexed, snapshot, staged
-from .tools import ToolError, gdtoolkit, run_godot
+from .tools import Echo, gdtoolkit, run_godot, run_process
 
 ANALYZER = Path(__file__).parent / "data" / "analyze_scripts.gd"
 
 
-def gdtool(name: str, args: list[str], files: list[str], config: Config) -> int:
+def gdtool(name: str, args: list[str], files: list[str], config: Config, echo: Echo | None) -> int:
     if not files:
         return 0
-    return subprocess.run([gdtoolkit(name), *args, *files], cwd=config.root).returncode
+    return run_process([gdtoolkit(name), *args, *files], config.root, None, echo)
 
 
 def res_path(path: str) -> str:
@@ -58,23 +57,26 @@ def script_steps(test: TestScript) -> list[tuple[str, list[str]]]:
 
 def steps_for(
     config: Config, chosen: list[str] | None, fast: bool, sources: Config | None = None
-) -> list[tuple[str, object]]:
+) -> list[Step]:
     """`chosen` are the selected scripts, or None for every scanned one; `sources` roots the copy they are read from."""
     sources = sources or config
     files = sources.scanned_files() if chosen is None else chosen
     gate, steps = config.gate, []
     if gate["format"]:
-        steps.append(("format", lambda: gdtool("gdformat", ["--check"], files, sources)))
+        steps.append(Step("format", PREPARE, lambda echo, env: gdtool("gdformat", ["--check"], files, sources, echo)))
     if gate["lint"]:
-        steps.append(("lint", lambda: gdtool("gdlint", [], files, sources)))
-    steps.append(("check", lambda: check(sources, absolute(sources, chosen), resource_map(config, sources, chosen))))
+        steps.append(Step("lint", PREPARE, lambda echo, env: gdtool("gdlint", [], files, sources, echo)))
+    steps.append(Step("check", PREPARE, lambda echo, env: check(
+        sources, absolute(sources, chosen), resource_map(config, sources, chosen), echo=echo)))
     if fast:
         return steps
     for command in gate["steps"]:
-        steps.append((command, lambda c=command: subprocess.run(c, shell=True, cwd=config.root).returncode))
+        steps.append(Step(command, PREPARE, lambda echo, env, c=command: run_process(["/bin/sh", "-c", c], config.root, None, echo)))
     root = str(config.root)
     for name, args in godot_steps(config):
-        steps.append((name, lambda a=args: run_godot(["--headless", "--path", root, *a])))
+        phase = IMPORT if name == "import" else TEST
+        steps.append(Step(name, phase, lambda echo, env, a=args: run_godot(
+            ["--headless", "--path", root, *a], echo=echo, env=env), godot=True))
     return steps
 
 
@@ -85,25 +87,6 @@ def resource_map(config: Config, sources: Config, chosen: list[str] | None) -> S
     surfaces = Surfaces(config.root, indexed(config, chosen))
     surfaces.overlay(sources.root, chosen)
     return surfaces
-
-
-def run_steps(steps: list[tuple[str, object]]) -> int:
-    started = time.monotonic()
-    for name, action in steps:
-        print(f"== {name}", flush=True)
-        began = time.monotonic()
-        try:
-            status = action()
-        except ToolError as error:
-            print(f"godot-guard: {error}")
-            status = 127
-        elapsed = time.monotonic() - began
-        if status:
-            print(f"== {name} failed after {elapsed:.1f}s", flush=True)
-            return 1
-        print(f"== {name} passed in {elapsed:.1f}s", flush=True)
-    print(f"gate passed in {time.monotonic() - started:.1f}s")
-    return 0
 
 
 def absolute(config: Config, chosen: list[str] | None) -> list[str] | None:
