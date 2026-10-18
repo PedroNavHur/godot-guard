@@ -41,7 +41,7 @@ godot-guard check --json [FILE...]  # the same verdict as one JSON object, for t
 godot-guard baseline [--init [--force]]
 godot-guard format [FILE...]        # gdformat in write mode
 godot-guard run -- ARGS...          # Godot; fails on ERROR:, WARNING:, SCRIPT ERROR: lines
-godot-guard gate [--fast] [--staged | FILE...]
+godot-guard gate [--fast] [--staged | FILE...] [--jobs N|auto]
 ```
 
 A directory argument stands for the scanned scripts below it. Hidden
@@ -59,6 +59,68 @@ format, lint, check, extra steps, editor import, analyzer, tests, and a smoke
 run, timed per step.
 
 Output lines are `path:line: message (rule)`.
+
+### Parallel gate
+
+`gate.jobs` (or `--jobs N|auto`, which wins for one run) sets how many gate
+steps run at once. `auto` is the number of CPUs this process may use, lowered
+to the tightest cgroup v2 CPU quota it runs under. With one job the gate runs
+exactly as above: one step at a time, output streamed. With more, it runs in
+three phases, each on at most that many workers:
+
+1. format, lint, check, and the `steps` commands;
+2. the editor import, alone;
+3. the analyzer, every test process (shards included), and smoke.
+
+Each Godot process in a parallel phase gets a fresh user-data directory, removed
+afterwards, so concurrent runs do not share state. A step's output is held and
+printed as one block when it finishes, framed by `== NAME` and then
+`== NAME passed in Xs` or `== NAME failed after Xs`. On the first failure in a
+phase no new step starts; running ones finish and print; every failed step is
+listed, and later phases are skipped. Ctrl-C or SIGTERM kills the child
+processes and exits 128 plus the signal number.
+
+### Sharded tests
+
+A `gate.tests` entry is a script path, or a mapping with `script` and `shards`:
+
+```yaml
+gate:
+  jobs: auto
+  tests:
+    - res://tests/run_unit.gd
+    - {script: res://tests/run_scenes.gd, shards: 4}
+```
+
+A sharded entry runs one Godot process per shard, each with `-- --shard=I/N`
+after its script (I from 1 to N). Its steps are named like
+`tests res://tests/run_scenes.gd [2/4]`. The package does not split the tests:
+the runner must read the argument and run only its share. A runner that ignores
+it runs every test N times. A runner reads the argument with
+`OS.get_cmdline_user_args()` and runs its share. Here the `test_*` methods are
+the runner's own and return true on pass:
+
+```gdscript
+extends SceneTree
+
+func _init() -> void:
+	var shard := 1
+	var shards := 1
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--shard="):
+			var parts := arg.trim_prefix("--shard=").split("/")
+			shard = int(parts[0])
+			shards = int(parts[1])
+	var cases := ["test_movement", "test_combat", "test_inventory", "test_save"]
+	var failed := 0
+	for i in cases.size():
+		if i % shards == shard - 1 and not call(cases[i]):
+			failed += 1
+	quit(failed)
+```
+
+Unknown keys, a non-string `script`, and a `shards` that is not a whole number
+of at least 1 are config errors.
 
 `check --json` prints one JSON object instead: `version` (1), `root`, the
 effective `limits` and rule `levels`, the `files` it checked, and `problems`,
@@ -96,7 +158,8 @@ gate:
   steps: []                  # shell commands run from the repository root
   import: true
   analyzer: true
-  tests: []                  # res:// scripts run with --script
+  jobs: 1                    # workers: a whole number, or auto
+  tests: []                  # res:// scripts, or {script: res://..., shards: N}
   smoke: [--quit-after, "3"] # [] or false skips it
 ```
 
