@@ -297,6 +297,21 @@ class RunTest(ShimTest):
         self.shim("godot", status=3)
         self.assertEqual(captured(run_godot, [])[0], 3)
 
+    def test_captured_output_is_echoed_and_warnings_still_fail(self):
+        self.shim("godot", extra="echo 'WARNING: unused variable'")
+        lines: list[str] = []
+        self.assertEqual(run_godot([], echo=lines.append), 1)
+        self.assertEqual(lines, ["WARNING: unused variable\n"])
+
+    def test_captured_clean_output_passes_and_exit_status_is_kept(self):
+        self.shim("godot", extra="echo 'Godot Engine v4.7.1'")
+        lines: list[str] = []
+        self.assertEqual(run_godot(["--version"], echo=lines.append), 0)
+        self.assertEqual(lines, ["Godot Engine v4.7.1\n"])
+        self.shim("godot", status=3, extra="echo 'bye'")
+        self.assertEqual(run_godot([], echo=lines.append), 3)
+        self.assertEqual(lines[-1], "bye\n")
+
 
 def real_godot() -> str | None:
     try:
