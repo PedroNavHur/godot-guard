@@ -229,6 +229,22 @@ class FullGateTest(ShimTest):
         self.assertIn("== import failed", output)
 
 
+class ShardedTestsTest(ShimTest):
+    def test_sharded_entries_run_one_process_per_shard(self):
+        self.repo.write(".godot-guard.yml", (
+            "gate:\n  format: false\n  lint: false\n  import: false\n  analyzer: false\n  smoke: false\n"
+            "  tests: [{script: res://tests/run_tests.gd, shards: 2}]\n"
+        ))
+        status, output = captured(gate_module.gate, self.repo.config(), False, False, [])
+        self.assertEqual(status, 0, output)
+        root = str(self.repo.root)
+        self.assertEqual(self.calls(), [
+            f"godot --headless --path {root} --script res://tests/run_tests.gd -- --shard=1/2",
+            f"godot --headless --path {root} --script res://tests/run_tests.gd -- --shard=2/2",
+        ])
+        self.assertIn("== tests res://tests/run_tests.gd [2/2]", output)
+
+
 class DirectoryArgumentTest(ShimTest):
     def setUp(self):
         super().setUp()

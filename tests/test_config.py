@@ -112,6 +112,43 @@ class ConfigTest(unittest.TestCase):
         repo = self.repo({"scripts/a.gd": ""}, "paths: [scripts]\n")
         self.assertEqual(config_module.load(repo.root / "scripts").root, repo.root)
 
+    def test_gate_jobs_is_a_count_or_auto(self):
+        self.assertEqual(self.repo({}, None).config().gate["jobs"], 1)
+        self.assertEqual(self.repo({}, "gate:\n  jobs: 4\n").config().gate["jobs"], 4)
+        self.assertEqual(self.repo({}, "gate:\n  jobs: auto\n").config().gate["jobs"], "auto")
+
+    def test_bad_jobs_are_errors(self):
+        for value in ("0", "-1", "many", "true", "1.5", "'2'"):
+            text = f"gate: {{jobs: {value}}}\n"
+            with self.assertRaises(config_module.ConfigError, msg=text) as caught:
+                self.repo({}, text).config()
+            self.assertIn("gate.jobs must be a whole number of at least 1, or auto", str(caught.exception))
+
+    def test_test_entries_are_scripts_or_sharded_mappings(self):
+        text = "gate:\n  tests:\n    - res://tests/a.gd\n    - script: res://tests/b.gd\n      shards: 3\n    - script: res://tests/c.gd\n"
+        self.assertEqual(self.repo({}, text).config().gate["tests"], [
+            config_module.TestScript("res://tests/a.gd"),
+            config_module.TestScript("res://tests/b.gd", 3),
+            config_module.TestScript("res://tests/c.gd"),
+        ])
+
+    def test_bad_test_entries_are_errors(self):
+        shards = "gate.tests shards must be a whole number of at least 1"
+        cases = (
+            ("gate: {tests: res://a.gd}\n", "gate.tests must be a list"),
+            ("gate: {tests: [3]}\n", "each gate.tests entry must be a string or a mapping"),
+            ("gate: {tests: [{script: res://a.gd, shard: 2}]}\n", "unknown key 'gate.tests.shard'"),
+            ("gate: {tests: [{shards: 2}]}\n", "gate.tests script must be a string"),
+            ("gate: {tests: [{script: 3}]}\n", "gate.tests script must be a string"),
+            ("gate: {tests: [{script: res://a.gd, shards: 0}]}\n", shards),
+            ("gate: {tests: [{script: res://a.gd, shards: '2'}]}\n", shards),
+            ("gate: {tests: [{script: res://a.gd, shards: true}]}\n", shards),
+        )
+        for text, message in cases:
+            with self.assertRaises(config_module.ConfigError, msg=text) as caught:
+                self.repo({}, text).config()
+            self.assertIn(message, str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

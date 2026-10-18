@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from .check import check, select
-from .config import Config
+from .config import Config, TestScript
 from .rules import Surfaces
 from .snapshot import indexed, snapshot, staged
 from .tools import ToolError, gdtoolkit, run_godot
@@ -36,10 +36,24 @@ def godot_steps(config: Config) -> list[tuple[str, list[str]]]:
         roots = [arg for path in config.paths for arg in ("--root", res_path(path))]
         excludes = [arg for pattern in config.exclude for arg in ("--exclude", pattern)]
         steps.append(("analyzer", ["--script", str(ANALYZER), "--", *roots, *excludes]))
-    steps += [(f"tests {script}", ["--script", script]) for script in gate["tests"]]
+    steps += test_steps(gate["tests"])
     if gate["smoke"]:
         steps.append(("smoke", list(gate["smoke"])))
     return steps
+
+
+def test_steps(tests: list[TestScript]) -> list[tuple[str, list[str]]]:
+    return [step for test in tests for step in script_steps(test)]
+
+
+def script_steps(test: TestScript) -> list[tuple[str, list[str]]]:
+    """One step for a script; a sharded script gets one per shard, each passed `-- --shard=I/N`."""
+    if test.shards == 1:
+        return [(f"tests {test.script}", ["--script", test.script])]
+    return [
+        (f"tests {test.script} [{shard}/{test.shards}]", ["--script", test.script, "--", f"--shard={shard}/{test.shards}"])
+        for shard in range(1, test.shards + 1)
+    ]
 
 
 def steps_for(

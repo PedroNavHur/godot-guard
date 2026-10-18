@@ -36,14 +36,25 @@ DEFAULTS = {
         "analyzer": True,
         "tests": [],
         "smoke": ["--quit-after", "3"],
+        "jobs": 1,
     },
 }
 BOUNDARY_KEYS = {"name", "paths", "forbid", "message"}
+TEST_KEYS = {"script", "shards"}
+AUTO = "auto"
 MERGE_TAG = "tag:yaml.org,2002:merge"
 
 
 class ConfigError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class TestScript:
+    """A `gate.tests` entry: a res:// script, run as `shards` Godot processes numbered 1 to `shards`."""
+
+    script: str
+    shards: int = 1
 
 
 class StrictLoader(yaml.SafeLoader):
@@ -204,6 +215,24 @@ def string_list(value, name: str) -> list[str]:
     return value
 
 
+def whole_count(value) -> bool:
+    """A whole number of at least 1; a bool is not a number here."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def script_entry(entry) -> TestScript:
+    """A `gate.tests` entry: a script path, or a mapping with `script` and an optional `shards` count."""
+    if isinstance(entry, str):
+        return TestScript(entry)
+    expect(isinstance(entry, dict), "each gate.tests entry must be a string or a mapping")
+    unknown(entry, TEST_KEYS, "gate.tests.")
+    script = given(entry, "script", None)
+    expect(isinstance(script, str), "gate.tests script must be a string")
+    shards = given(entry, "shards", 1)
+    expect(whole_count(shards), "gate.tests shards must be a whole number of at least 1")
+    return TestScript(script, shards)
+
+
 def expect(condition: bool, message: str) -> None:
     if not condition:
         raise ConfigError(f"{CONFIG_NAME}: {message}")
@@ -236,8 +265,11 @@ def validate(config: Config) -> None:
     gate = config.gate
     for key in ("format", "lint", "import", "analyzer"):
         expect(isinstance(gate[key], bool), f"gate.{key} must be true or false")
+    jobs = gate["jobs"]
+    expect(jobs == AUTO or whole_count(jobs), f"gate.jobs must be a whole number of at least 1, or {AUTO}")
     string_list(gate["steps"], "gate.steps")
-    string_list(gate["tests"], "gate.tests")
+    expect(isinstance(gate["tests"], list), "gate.tests must be a list")
+    gate["tests"] = [script_entry(entry) for entry in gate["tests"]]
     smoke = gate["smoke"]
     expect(smoke is False or isinstance(smoke, list), "gate.smoke must be a list of arguments or false")
     if smoke:
