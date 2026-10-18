@@ -146,11 +146,15 @@ def isolation(step: Step) -> Iterator[dict | None]:
 
 @contextmanager
 def interruptible() -> Iterator[None]:
-    """On SIGINT or SIGTERM, kill the children this gate started, then exit with 128 plus the signal number."""
+    """On SIGINT or SIGTERM, kill the children this gate started, then exit with 128 plus the signal number.
+
+    The children are reaped here, on the normal stack, once the exit has unwound past them.
+    """
     previous = install_stop_handlers() if threading.current_thread() is threading.main_thread() else {}
     try:
         yield
     finally:
+        CHILDREN.reap()
         for number, handler in previous.items():
             signal.signal(number, handler)
         CHILDREN.resume()
@@ -160,7 +164,8 @@ def install_stop_handlers() -> dict[int, object]:
     """Install the stop handler; returns the handlers it replaced, keyed by signal number."""
 
     def stop(signum: int, frame: object) -> None:
-        # A stop deferred past a spawn on this thread is raised again later, so only the raise here exits.
+        # This only kills: it may run on a thread blocked in a child's wait(). A stop deferred past a spawn
+        # is raised again later, so only the raise here exits.
         if CHILDREN.stop(signum):
             raise SystemExit(128 + signum)
 

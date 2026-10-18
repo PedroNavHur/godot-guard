@@ -72,12 +72,13 @@ class Children:
 
         The spawn holds the lock, so a stop from another thread waits until the child is registered and
         then kills it. A signal on this thread can run its handler mid-spawn; `stop` defers that signal,
-        and it is raised again once the child is registered, so the handler kills and reaps the child.
+        and it is raised again once the child is registered, so the handler kills the child and exits.
         """
         with self._lock:
             if self._stopped:
                 raise ToolError("interrupted; not starting another process")
             self._spawner = threading.get_ident()
+            process = None
             try:
                 process = subprocess.Popen(
                     command, cwd=cwd, env=env, start_new_session=True,
@@ -88,11 +89,14 @@ class Children:
                 self._live.add(process)
             finally:
                 self._spawner = None
-                self._raise_deferred()
+                self._raise_deferred(process)
         return process
 
     def stop(self, signum: int) -> bool:
-        """Refuse new children, kill the live ones, and reap them; `resume` lifts the refusal.
+        """Refuse new children and kill the live ones; `resume` lifts the refusal.
+
+        Never waits: the stop handler can run on the thread blocked in a child's `wait()`, which holds that
+        child's wait lock, so waiting here would deadlock. The children are reaped as the stop's exit unwinds.
 
         Returns False, deferring `signum`, when this thread is mid-spawn: the spawn raises it once the child is
         registered. Otherwise returns True.
@@ -102,25 +106,31 @@ class Children:
                 self._deferred.append(signum)
                 return False
             self._stopped = True
-            live = list(self._live)
-            for process in live:
+            for process in self._live:
                 kill_session(process)
-        for process in live:
-            process.wait()
         return True
 
-    def _raise_deferred(self) -> None:
-        """Raise the signals that arrived mid-spawn, now that the spawn is over."""
+    def _raise_deferred(self, process: subprocess.Popen | None) -> None:
+        """Raise the signals that arrived mid-spawn, now that the spawn is over.
+
+        Their handler only kills, so the exit it starts unwinds past `start` with the child registered. No wait
+        lock is held here, so `process` is reaped now rather than left behind.
+        """
         signums, self._deferred = self._deferred, []
-        for signum in signums:
-            signal.raise_signal(signum)
+        try:
+            for signum in signums:
+                signal.raise_signal(signum)
+        except BaseException:
+            if process is not None:
+                self.finish(process)
+            raise
 
     def resume(self) -> None:
         with self._lock:
             self._stopped = False
 
     def finish(self, process: subprocess.Popen) -> None:
-        """Forget `process`; if it is still running (its reader raised), kill it and reap it."""
+        """Forget `process`; if it is still running (its reader raised, or a stop unwound), kill it and reap it."""
         with self._lock:
             self._live.discard(process)
         if process.poll() is None:
@@ -128,6 +138,13 @@ class Children:
             process.wait()
         if process.stdout:
             process.stdout.close()
+
+    def reap(self) -> None:
+        """Kill and reap any child still registered, for a stop whose unwinding missed it. Runs on the normal stack."""
+        with self._lock:
+            leftover = list(self._live)
+        for process in leftover:
+            self.finish(process)
 
 
 CHILDREN = Children()
@@ -137,6 +154,9 @@ def kill_session(process: subprocess.Popen) -> None:
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
+        pass
+    except PermissionError:
+        # macOS answers EPERM, not ESRCH, once the group's only member is a zombie: it died, and the wait reaps it.
         pass
 
 
