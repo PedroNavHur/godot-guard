@@ -156,8 +156,10 @@ def kill_session(process: subprocess.Popen) -> None:
     except ProcessLookupError:
         pass
     except PermissionError:
-        # macOS answers EPERM, not ESRCH, once the group's only member is a zombie: it died, and the wait reaps it.
-        pass
+        # macOS answers EPERM, not ESRCH, once the group's only member is a zombie. EPERM can also mean a live
+        # group we may not signal, so kill the child itself: an unreaped child's pid is still ours, and a zombie
+        # accepts the signal. If this fails too, raise rather than wait on a child that is still running.
+        process.kill()
 
 
 def run_process(command: list[str], cwd: Path | None, env: dict | None, echo: Echo | None) -> int:

@@ -241,6 +241,25 @@ class SerialStopTest(unittest.TestCase):
         stop_gate_mid_step(self, signal.SIGTERM, jobs=1)
 
 
+class KillSessionTest(unittest.TestCase):
+    def test_a_refused_group_kill_still_kills_the_live_child(self):
+        child = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.addCleanup(child.wait)
+        self.addCleanup(kill_group, child.pid)
+        with mock.patch.object(tools.os, "killpg", side_effect=PermissionError):
+            tools.kill_session(child)
+        self.assertEqual(child.wait(timeout=5), -signal.SIGKILL)
+
+    def test_a_child_that_cannot_be_killed_raises_instead_of_passing(self):
+        child = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.addCleanup(child.wait)
+        self.addCleanup(kill_group, child.pid)
+        with mock.patch.object(tools.os, "killpg", side_effect=PermissionError), \
+                mock.patch.object(child, "kill", side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                tools.kill_session(child)
+
+
 def stop_gate_mid_step(test: unittest.TestCase, signum: int, jobs: int) -> None:
     """Run a gate whose step is mid-`sleep 30`, send it `signum`, and check it exits and its step's group is gone."""
     with tempfile.TemporaryDirectory() as temp:
