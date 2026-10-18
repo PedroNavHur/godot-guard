@@ -1,4 +1,4 @@
-# godot-guard v0.2 spec
+# godot-guard v0.3 spec
 
 godot-guard gives Godot 4 projects the guardrails Pedro's Next.js repositories
 get from oxlint, oxfmt, tsc, vitest, Husky, and CI (reference: govstructure's
