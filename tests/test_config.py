@@ -35,6 +35,12 @@ class ConfigTest(unittest.TestCase):
                 self.repo({}, text).config()
             self.assertIn(key, str(caught.exception))
 
+    def test_the_removed_file_lines_rule_is_an_unknown_key(self):
+        for text, key in (("limits:\n  file-lines: 300\n", "'limits.file-lines'"), ("rules:\n  file-lines: off\n", "'rules.file-lines'")):
+            with self.assertRaises(config_module.ConfigError) as caught:
+                self.repo({}, text).config()
+            self.assertIn(key, str(caught.exception))
+
     def test_wrong_shapes_are_errors(self):
         cases = (
             ("false\n", "the file must be a mapping"), ("[]\n", "the file must be a mapping"),
@@ -48,10 +54,10 @@ class ConfigTest(unittest.TestCase):
             self.assertIn(message, str(caught.exception))
 
     def test_null_takes_the_default(self):
-        text = "paths: null\nlimits: ~\nrules:\n  file-lines: null\ngate:\n  smoke: null\nboundaries:\n"
+        text = "paths: null\nlimits: ~\nrules:\n  long-comment: null\ngate:\n  smoke: null\nboundaries:\n"
         config = self.repo({}, text).config()
         self.assertEqual((config.paths, config.limits["cognitive"]), (["."], 8))
-        self.assertEqual((config.rules["file-lines"], config.gate["smoke"], config.boundaries), ("error", ["--quit-after", "3"], []))
+        self.assertEqual((config.rules["long-comment"], config.gate["smoke"], config.boundaries), ("error", ["--quit-after", "3"], []))
         self.assertEqual(self.repo({}, "").config().paths, ["."])
 
     def test_duplicate_keys_are_errors(self):
@@ -69,7 +75,7 @@ class ConfigTest(unittest.TestCase):
         cases = (
             ("limits:\n  cyclomatic: 16\n  <<: {cognitive: 100}\n", "line 3: merge keys are not supported"),
             ("gate: &fast {lint: false}\n", "line 1: anchors and aliases are not supported"),
-            ("limits: {cognitive: 4}\nrules: {file-lines: *a}\n", "line 2: anchors and aliases are not supported"),
+            ("limits: {cognitive: 4}\nrules: {long-comment: *a}\n", "line 2: anchors and aliases are not supported"),
             ("limits: &a {<<: *a}\n", "line 1: anchors and aliases are not supported"),
         )
         for text, message in cases:
@@ -84,7 +90,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_bad_level_is_an_error(self):
         with self.assertRaises(config_module.ConfigError):
-            self.repo({}, "rules:\n  file-lines: fatal\n").config()
+            self.repo({}, "rules:\n  long-comment: fatal\n").config()
         with self.assertRaises(config_module.ConfigError):
             self.repo({}, "rules:\n  nested-ternary: error\n").config()
 

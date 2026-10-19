@@ -169,8 +169,6 @@ def analyze(config: Config, path: str, surfaces: Surfaces) -> FileResult:
     source = (config.root / path).read_text(encoding="utf-8", errors="replace")
     result = FileResult(path)
     tree_rules(result, source)
-    lines = comments.code_lines(source)
-    result.items.append(Item("file-lines", path, path, 1, lines, f"{lines} code lines"))
     result.items.append(comment_item(config, path, source))
     surface = surfaces.surface(path, source)
     if surface is not None:

@@ -124,11 +124,10 @@ class OtherRulesTest(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("the file has 3 long comments, its baseline allows 2", output)
 
-    def test_file_lines(self):
-        repo = Repo({"long.gd": "extends Node\n" + "".join(f"var v{n} := {n}\n" for n in range(5))}, "limits:\n  file-lines: 3\n")
+    def test_a_long_file_is_not_a_finding(self):
+        repo = Repo({"long.gd": "extends Node\n" + "".join(f"var v{n} := {n}\n" for n in range(500))})
         self.addCleanup(repo.cleanup)
-        status, output = captured(check, repo.config())
-        self.assertIn("long.gd:1: 6 code lines (max 3) (file-lines)", output)
+        self.assertEqual(captured(check, repo.config())[0], 0)
 
 
 LAMBDAS = (
@@ -167,7 +166,7 @@ class FunctionKeyTest(unittest.TestCase):
 class KeyPathTest(unittest.TestCase):
     def test_paths_holding_the_key_separator(self):
         self.assertEqual(baseline.item_path("cognitive-complexity", "a::b.gd::Inner.work"), "a::b.gd")
-        self.assertEqual(baseline.item_path("file-lines", "a::b.gd"), "a::b.gd")
+        self.assertEqual(baseline.item_path("long-comment", "a::b.gd"), "a::b.gd")
 
     def test_subset_check_reports_a_missing_function_in_such_a_file(self):
         repo = Repo({"a::b.gd": "extends Resource\n\n\nfunc calm():\n\tpass\n"}, CONFIG)

@@ -4,7 +4,6 @@ exclude: [addons/**, .godot/**]
 limits:
   cognitive: 6
   cyclomatic: 12
-  file-lines: 300
   comment-lines: 2
   inputs: 8
 boundaries:

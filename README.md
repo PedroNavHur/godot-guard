@@ -11,7 +11,7 @@ tsc, Husky, and CI, with a ratchet baseline so existing code can adopt them.
 | oxlint core rules | `gdlint` with `.gdlintrc` | gdtoolkit |
 | `tsc` strict, `no-unsafe-*` | analyzer warnings set to error in `project.godot`, every script loaded headless | Godot |
 | `complexity` 16, `cognitive-complexity` 8 | `cyclomatic-complexity`, `cognitive-complexity` | godot-guard |
-| `max-lines` 300 | `file-lines` (blank and comment lines skipped) | godot-guard |
+| `max-lines` | none: fleet's `file-size` check caps every file at 20,000 bytes, in any language | fleet |
 | `no-long-comment` | `long-comment` | godot-guard |
 | prop cap | `interface-cap`: `@export`s, signals, `_init`/`setup`/`configure` parameters | godot-guard |
 | `no-nested-ternary` (advisory) | `nested-ternary` (warning, never fails) | godot-guard |
@@ -25,7 +25,7 @@ tsc, Husky, and CI, with a ratchet baseline so existing code can adopt them.
 In the game's `tools/requirements-lint.txt`, next to gdtoolkit:
 
 ```
-godot-guard @ git+https://github.com/PedroNavHur/godot-guard@v0.3.0
+godot-guard @ git+https://github.com/PedroNavHur/godot-guard@v0.4.0
 ```
 
 Then `python3 -m venv .venv && .venv/bin/pip install -r tools/requirements-lint.txt`.
@@ -141,11 +141,10 @@ takes the default, and a value of the wrong type is an error.
 ```yaml
 paths: [.]
 exclude: [addons/**, .godot/**]
-limits: {cognitive: 8, cyclomatic: 16, file-lines: 300, comment-lines: 2, inputs: 8}
+limits: {cognitive: 8, cyclomatic: 16, comment-lines: 2, inputs: 8}
 rules:          # error, warn, or off
   cognitive-complexity: error
   cyclomatic-complexity: error
-  file-lines: error
   long-comment: error
   interface-cap: error
   nested-ternary: warn
@@ -181,7 +180,7 @@ adopts godot-guard; it may only shrink.
 4. Raising a limit or re-baselining on purpose is `baseline --init --force`,
    reviewed like any other change.
 
-Keys are the repo-relative path for file rules (`file-lines`, `long-comment`,
+Keys are the repo-relative path for file rules (`long-comment`,
 `interface-cap`) and `path::name` for the complexity rules, where the name is
 qualified with `.`: `Inner.method`, `speed.set`, and `outer.<lambda#2>` for the
 second anonymous lambda in `outer`. A name repeated in one file is numbered on

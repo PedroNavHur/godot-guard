@@ -12,7 +12,6 @@ from .rules import FileResult, Item, Problem
 LIMIT_OF = {
     "cognitive-complexity": "cognitive",
     "cyclomatic-complexity": "cyclomatic",
-    "file-lines": "file-lines",
     "interface-cap": "inputs",
 }
 TREE_RULES = ("cognitive-complexity", "cyclomatic-complexity")

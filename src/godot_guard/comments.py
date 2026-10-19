@@ -86,11 +86,6 @@ def long_comments(source: str, cap: int) -> list[Comment]:
     ]
 
 
-def code_lines(source: str) -> int:
-    """Lines that are neither blank nor comment-only."""
-    return sum(1 for raw in source.splitlines() if raw.strip() and not raw.strip().startswith("#"))
-
-
 def strip_comments(source: str) -> str:
     """The source with every comment removed and strings and line breaks kept."""
     return CODE_TOKEN.sub(lambda m: "" if m.group().startswith("#") else m.group(), source)

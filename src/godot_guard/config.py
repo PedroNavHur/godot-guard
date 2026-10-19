@@ -14,15 +14,14 @@ import yaml
 CONFIG_NAME = ".godot-guard.yml"
 BASELINE_NAME = ".godot-guard-baseline.json"
 LEVELS = ("error", "warn", "off")
-BASELINED = ("cognitive-complexity", "cyclomatic-complexity", "file-lines", "long-comment", "interface-cap")
+BASELINED = ("cognitive-complexity", "cyclomatic-complexity", "long-comment", "interface-cap")
 DEFAULTS = {
     "paths": ["."],
     "exclude": ["addons/**", ".godot/**"],
-    "limits": {"cognitive": 8, "cyclomatic": 16, "file-lines": 300, "comment-lines": 2, "inputs": 8},
+    "limits": {"cognitive": 8, "cyclomatic": 16, "comment-lines": 2, "inputs": 8},
     "rules": {
         "cognitive-complexity": "error",
         "cyclomatic-complexity": "error",
-        "file-lines": "error",
         "long-comment": "error",
         "interface-cap": "error",
         "nested-ternary": "warn",

@@ -36,7 +36,7 @@ class CheckJsonTest(unittest.TestCase):
         self.assertEqual(report["version"], 1)
         self.assertEqual(report["root"], str(self.repo.root))
         self.assertEqual(
-            report["limits"], {"cognitive": 2, "cyclomatic": 16, "file-lines": 300, "comment-lines": 3, "inputs": 8}
+            report["limits"], {"cognitive": 2, "cyclomatic": 16, "comment-lines": 3, "inputs": 8}
         )
         self.assertEqual(report["levels"]["cyclomatic-complexity"], "warn")
         self.assertEqual(report["levels"]["nested-ternary"], "off")
