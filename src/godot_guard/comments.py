@@ -1,4 +1,4 @@
-"""Comment runs and code-line counts, ported from pedro-best-practices `long_comments.py` (GDScript only).
+"""Comment runs and comment stripping, ported from pedro-best-practices `long_comments.py` (GDScript only).
 
 A comment is an unbroken run of `#` lines that each own their line. Prose
 lines exclude blank lines, separator rules, references (a lone URL or path, a

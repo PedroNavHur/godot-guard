@@ -30,13 +30,13 @@ class ConfigTest(unittest.TestCase):
         self.assertFalse(config.gate["smoke"])
 
     def test_unknown_keys_are_errors(self):
-        for text, key in (("limit:\n  cognitive: 6\n", "'limit'"), ("limits:\n  cognitve: 6\n", "'limits.cognitve'")):
-            with self.assertRaises(config_module.ConfigError) as caught:
-                self.repo({}, text).config()
-            self.assertIn(key, str(caught.exception))
-
-    def test_the_removed_file_lines_rule_is_an_unknown_key(self):
-        for text, key in (("limits:\n  file-lines: 300\n", "'limits.file-lines'"), ("rules:\n  file-lines: off\n", "'rules.file-lines'")):
+        cases = (
+            ("limit:\n  cognitive: 6\n", "'limit'"),
+            ("limits:\n  cognitve: 6\n", "'limits.cognitve'"),
+            ("limits:\n  file-lines: 300\n", "'limits.file-lines'"),
+            ("rules:\n  file-lines: off\n", "'rules.file-lines'"),
+        )
+        for text, key in cases:
             with self.assertRaises(config_module.ConfigError) as caught:
                 self.repo({}, text).config()
             self.assertIn(key, str(caught.exception))
