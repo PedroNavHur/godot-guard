@@ -29,9 +29,6 @@ class CommentTest(unittest.TestCase):
         source = "var a := 1\n# Copyright (c) 2026 Someone\n# Permission is granted\n# to anyone at all\n"
         self.assertEqual(comments.long_comments(source, 2), [])
 
-    def test_code_lines_skip_blank_and_comment_lines(self):
-        self.assertEqual(comments.code_lines(fixtures.COMMENTS), 7)
-
 
 class InterfaceTest(unittest.TestCase):
     def test_counts_exports_signals_and_setup_parameters(self):

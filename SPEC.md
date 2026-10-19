@@ -1,4 +1,4 @@
-# godot-guard v0.3 spec
+# godot-guard v0.4 spec
 
 godot-guard gives Godot 4 projects the guardrails Pedro's Next.js repositories
 get from oxlint, oxfmt, tsc, vitest, Husky, and CI (reference: govstructure's
@@ -15,7 +15,7 @@ hexstead (`PedroNavHur/hexstead`) and wingmen (`PedroNavHur/heavenrest`).
 | oxlint core rules | `gdlint` with `.gdlintrc` | gdtoolkit |
 | `tsc` strict, `no-unsafe-*` | GDScript analyzer warnings set to error in `project.godot`, loaded headless | Godot |
 | `complexity` max 16, `cognitive-complexity` max 8 | `cognitive-complexity`, `cyclomatic-complexity` | godot-guard |
-| `max-lines` 300 (skip blank and comment lines) | `file-lines` | godot-guard |
+| `max-lines` | none: fleet's `file-size` check caps every file at 20,000 bytes, in any language | fleet |
 | `no-long-comment` | `long-comment` | godot-guard |
 | prop cap (pedro/eight-prop-cap) | `interface-cap` (pedro/godot-interface-cap) | godot-guard |
 | `no-nested-ternary` advisory | `nested-ternary` (warning, never fails) | godot-guard |
@@ -52,13 +52,11 @@ exclude: [addons/**, .godot/**]
 limits:
   cognitive: 8
   cyclomatic: 16
-  file-lines: 300         # code lines: blank and comment-only lines skipped
   comment-lines: 2        # prose lines per comment run
   inputs: 8               # interface cap
 rules:                    # set a rule to off to disable it
   cognitive-complexity: error
   cyclomatic-complexity: error
-  file-lines: error
   long-comment: error
   interface-cap: error
   nested-ternary: warn    # Pedro's rule: advisory, never a merge blocker
@@ -98,8 +96,6 @@ the details).
   (`outer.<lambda#2>`; `<lambda#1>` or `Inner.<lambda#1>` outside any
   function; `outer.named` for a named lambda). A name still repeated in one
   file gets `#N` on every occurrence (`f#1`, `f#2`).
-- **file-lines**: lines that are neither blank nor comment-only (`#` or `##`).
-  Key: `path`.
 - **long-comment**: an unbroken run of own-line `#` comments with more than
   `comment-lines` prose lines. Exempt: `##` doc comments, trailing comments,
   the file header block above the first line of code (after
@@ -139,7 +135,6 @@ the details).
   "version": 1,
   "cognitive-complexity": {"ui/fx.gd::draw_foliage": 33},
   "cyclomatic-complexity": {},
-  "file-lines": {"scenes/battle.gd": 1500},
   "long-comment": {"ui/ui_kit.gd": 3},
   "interface-cap": {"scripts/ui/action_bar.gd": 15}
 }
@@ -190,8 +185,8 @@ Run from anywhere inside the repo; the root is the nearest directory holding
   {
     "version": 1,
     "root": "/absolute/path/to/the/root",
-    "limits": {"cognitive": 8, "cyclomatic": 16, "file-lines": 300, "comment-lines": 2, "inputs": 8},
-    "levels": {"cognitive-complexity": "error", "cyclomatic-complexity": "error", "file-lines": "error",
+    "limits": {"cognitive": 8, "cyclomatic": 16, "comment-lines": 2, "inputs": 8},
+    "levels": {"cognitive-complexity": "error", "cyclomatic-complexity": "error",
                "long-comment": "error", "interface-cap": "error", "nested-ternary": "warn"},
     "files": ["scripts/unit.gd"],
     "problems": [

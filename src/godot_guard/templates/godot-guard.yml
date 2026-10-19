@@ -4,13 +4,11 @@ exclude: [addons/**, .godot/**]
 limits:
   cognitive: 8
   cyclomatic: 16
-  file-lines: 300
   comment-lines: 2
   inputs: 8
 rules:
   cognitive-complexity: error
   cyclomatic-complexity: error
-  file-lines: error
   long-comment: error
   interface-cap: error
   nested-ternary: warn

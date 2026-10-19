@@ -1,4 +1,4 @@
-"""Comment runs and code-line counts, ported from pedro-best-practices `long_comments.py` (GDScript only).
+"""Comment runs and comment stripping, ported from pedro-best-practices `long_comments.py` (GDScript only).
 
 A comment is an unbroken run of `#` lines that each own their line. Prose
 lines exclude blank lines, separator rules, references (a lone URL or path, a
@@ -84,11 +84,6 @@ def long_comments(source: str, cap: int) -> list[Comment]:
         c for c in comments
         if c.prose > cap and c.end_line >= first_code and not LICENSE.search("\n".join(c.body))
     ]
-
-
-def code_lines(source: str) -> int:
-    """Lines that are neither blank nor comment-only."""
-    return sum(1 for raw in source.splitlines() if raw.strip() and not raw.strip().startswith("#"))
 
 
 def strip_comments(source: str) -> str:
