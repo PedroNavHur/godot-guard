@@ -23,10 +23,17 @@ echo "$(basename "$0") $*" >> "{log}"
 exit {status}
 """
 CLEAN = "extends Node\n\nvar a := 1\n"
+# Commits need an identity, and a CI runner has no git config to supply one.
+GIT_IDENTITY = {
+    "GIT_AUTHOR_NAME": "godot-guard tests",
+    "GIT_AUTHOR_EMAIL": "tests@godot-guard.invalid",
+    "GIT_COMMITTER_NAME": "godot-guard tests",
+    "GIT_COMMITTER_EMAIL": "tests@godot-guard.invalid",
+}
 
 
 def git(root: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, env={**os.environ, **GIT_IDENTITY})
 
 
 class ShimTest(unittest.TestCase):
