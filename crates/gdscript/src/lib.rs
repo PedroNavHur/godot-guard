@@ -2,6 +2,8 @@
 
 #[allow(dead_code, reason = "read by the parser runtime added next")]
 mod generated;
+#[cfg(test)]
+mod matchers;
 #[cfg(feature = "oracle")]
 pub mod oracle;
 #[allow(dead_code, reason = "read by the parser runtime added next")]
