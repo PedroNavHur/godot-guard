@@ -1,7 +1,7 @@
 //! gdlint: the same problems as gdtoolkit 4.5.0's linter, read from a `gdscript::Tree`.
 //!
-//! Library use: load a [`Config`] once ([`Config::defaults`], or [`Config::from_entries`] over a
-//! `.gdlintrc`), then call [`lint_code`] per file with the file's text, as [`read_source`] returns it, and its
+//! Library use: load a [`Config`] once ([`Config::defaults`], or [`cli::load_config`] for the `.gdlintrc`
+//! search), then call [`lint_code`] per file with the file's text, as [`read_source`] returns it, and its
 //! parse tree. [`Problem`]s print with [`Printed`].
 
 use std::collections::{HashMap, HashSet};
@@ -13,8 +13,10 @@ use regex::Regex;
 pub mod ast;
 mod basic_checks;
 mod class_checks;
+pub mod cli;
 pub mod config;
 mod design_checks;
+mod docopt;
 mod format_checks;
 mod helpers;
 mod if_return_checks;
