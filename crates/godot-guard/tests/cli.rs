@@ -146,3 +146,41 @@ fn version_and_errors_through_the_binary() {
         bad.stderr
     );
 }
+
+/// test_json.py's command-line cases: a JSON report keeps skip messages on stderr.
+fn json_cli_repo() -> Repo {
+    let config = "exclude: [vendor]\n";
+    Repo::new(
+        &[
+            ("b.gd", "extends Node\n"),
+            ("vendor/c.gd", "extends Node\n"),
+        ],
+        Some(config),
+    )
+}
+
+#[test]
+fn skipped_arguments_stay_on_stderr() {
+    let repo = json_cli_repo();
+    let run = repo.run(&["check", "--json", &repo.path("vendor/c.gd")]);
+    assert_eq!(run.status, 0, "{run:?}");
+    let report: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(
+        (&report["files"], &report["problems"]),
+        (&Value::Array(vec![]), &Value::Array(vec![]))
+    );
+    assert!(
+        run.stderr
+            .contains("skipping vendor/c.gd: it matches exclude"),
+        "{run:?}"
+    );
+}
+
+#[test]
+fn the_json_flag_on_the_command_line() {
+    let repo = json_cli_repo();
+    let run = repo.run(&["check", "--json", "b.gd"]);
+    assert_eq!(run.status, 0, "{run:?}");
+    let report: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(report["files"], serde_json::json!(["b.gd"]));
+}
