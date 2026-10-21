@@ -22,6 +22,7 @@ mod helpers;
 mod if_return_checks;
 mod misc_checks;
 mod name_checks;
+mod parse_error;
 mod problem;
 pub mod pyre;
 pub mod repr;

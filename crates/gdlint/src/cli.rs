@@ -1,22 +1,23 @@
 //! `linter/__main__.py`: the `gdlint` command, with the parser passed in.
 //!
 //! [`run`] writes what gdlint writes, to the same streams, and returns its exit status. Where the Python
-//! dies with a traceback (an unreadable config, a file that is not UTF-8, `-d` over an existing file), this
-//! prints a one-line error instead, with the same status, 1.
+//! dies with a traceback (an unreadable config, a file that is not UTF-8, an indenter error, `-d` over an
+//! existing file), this prints a one-line error instead, with the same status, 1.
 
 use std::io::{self, Write};
 use std::path::Path;
 
-use gdscript::Tree;
+use gdscript::{ParseError, Tree};
 
 use crate::config::{self, CONFIG_FILE_NAME, Config, ConfigError};
 use crate::docopt::{self, Command};
+use crate::parse_error;
 use crate::problem::Printed;
 use crate::repr::{str_repr, value_repr};
 use crate::yaml::Value;
 
-/// A parser: the file's tree, or the message gdlint prints for a file it cannot parse.
-pub type Parse<'a> = dyn Fn(&str) -> Result<Tree, String> + Sync + 'a;
+/// A parser, `gdscript::parse` outside tests: the file's tree, or why gdtoolkit cannot parse it.
+pub type Parse<'a> = dyn Fn(&str) -> Result<Tree, ParseError> + Sync + 'a;
 
 pub const VERSION: &str = "gdlint 4.5.0";
 
@@ -156,10 +157,16 @@ fn lint_file(
     };
     let tree = match parse(&content) {
         Ok(tree) => tree,
-        Err(message) => {
-            writeln!(err, "{file_path}:\n\n{message}")?;
-            return Ok(Some(1));
-        }
+        Err(error) => match parse_error::report(&error, &content) {
+            Ok(report) => {
+                writeln!(err, "{file_path}:\n\n{report}")?;
+                return Ok(Some(1));
+            }
+            Err(exception) => {
+                writeln!(err, "{file_path}: {exception}")?;
+                return Ok(None);
+            }
+        },
     };
     let problems = crate::lint_code(&content, &tree, config);
     for problem in &problems {
