@@ -66,3 +66,67 @@ pub struct Rule {
     /// ChildFilterLALR_NoPlaceholders: (child index, inline that `_rule` child's children). None keeps all.
     pub include: Option<&'static [(u16, bool)]>,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// Shift a terminal, or go to a state after a reduce.
+    Shift(u16),
+    Reduce(u16),
+}
+
+const REDUCE_BIT: u16 = 0x8000;
+const NO_ACTION: u16 = u16::MAX;
+
+impl Action {
+    fn decode(word: u16) -> Option<Action> {
+        match word {
+            NO_ACTION => None,
+            _ if word & REDUCE_BIT != 0 => Some(Action::Reduce(word & !REDUCE_BIT)),
+            _ => Some(Action::Shift(word)),
+        }
+    }
+}
+
+/// The parse table spread out, one word per (state, symbol), so a lookup is one load.
+pub struct DenseTable {
+    words: Vec<u16>,
+    symbols: usize,
+}
+
+impl DenseTable {
+    pub fn new(grammar: &Grammar) -> DenseTable {
+        let symbols = grammar.symbols.len();
+        let mut words = vec![NO_ACTION; grammar.states.len() * symbols];
+        for (state, actions) in grammar.states.iter().enumerate() {
+            for &entry in actions.iter() {
+                words[state * symbols + (entry >> 16) as usize] = entry as u16;
+            }
+        }
+        DenseTable { words, symbols }
+    }
+
+    pub fn action(&self, state: u16, symbol: Symbol) -> Option<Action> {
+        Action::decode(self.words[state as usize * self.symbols + symbol as usize])
+    }
+}
+
+impl Grammar {
+    /// The terminals `state` has an action for, as lark lists them in UnexpectedToken's `expected`.
+    pub fn expected(&self, state: u16) -> Vec<&'static str> {
+        let mut names: Vec<_> = self.states[state as usize]
+            .iter()
+            .map(|entry| (entry >> 16) as usize)
+            .filter(|&symbol| symbol < self.terminal_count)
+            .map(|symbol| self.symbols[symbol])
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
+    pub fn symbol(&self, name: &str) -> Option<Symbol> {
+        self.symbols[..self.terminal_count]
+            .iter()
+            .position(|&s| s == name)
+            .map(|index| index as Symbol)
+    }
+}

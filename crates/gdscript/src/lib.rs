@@ -1,13 +1,17 @@
 //! GDScript lexer and parser: the tree gdtoolkit 4.5.0's lark grammar builds, without Python.
 
-#[allow(dead_code, reason = "read by the parser runtime added next")]
+pub mod error;
 mod generated;
-#[cfg(test)]
+mod lalr;
+mod lexer;
 mod matchers;
 #[cfg(feature = "oracle")]
 pub mod oracle;
-#[allow(dead_code, reason = "read by the parser runtime added next")]
+mod parser;
 mod tables;
 pub mod tree;
+mod tree_builder;
 
+pub use error::{ErrorKind, ParseError};
+pub use parser::parse_comments;
 pub use tree::{Node, Span, Token, Tree, intern};
