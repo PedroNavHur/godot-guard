@@ -5,8 +5,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use std::collections::BTreeMap;
+
+use godot_guard::baseline::{self, Data};
+use godot_guard::check::{self, Request};
 use godot_guard::config::{self, Config};
 use godot_guard::godot_warnings::{ERROR, REQUIRED};
+use godot_guard::scripts::Scripts;
+use serde_json::Value;
 
 /// A project.godot that passes analyzer-config: every required warning at error.
 pub fn strict_project() -> String {
@@ -85,4 +91,56 @@ pub struct Run {
     pub status: i32,
     pub stdout: String,
     pub stderr: String,
+}
+
+/// `check` in-process: its status and report.
+pub fn check(config: &Config, files: Option<Vec<String>>) -> (i32, String) {
+    let request = Request {
+        files,
+        ..Request::default()
+    };
+    check::check(config, request, &Scripts::new()).unwrap()
+}
+
+pub fn check_json(config: &Config, files: Option<Vec<String>>) -> (i32, Value) {
+    let request = Request {
+        files,
+        as_json: true,
+        ..Request::default()
+    };
+    let (status, text) = check::check(config, request, &Scripts::new()).unwrap();
+    (status, serde_json::from_str(&text).unwrap())
+}
+
+pub fn update(config: &Config, init: bool, force: bool) -> (i32, String) {
+    check::update_baseline(config, init, force, &Scripts::new()).unwrap()
+}
+
+/// A function with `count` sequential ifs: cognitive `count`.
+pub fn branches(name: &str, count: usize) -> String {
+    let body: String = (0..count)
+        .map(|n| format!("\tif x == {n}:\n\t\treturn {n}\n"))
+        .collect();
+    format!("func {name}(x: int) -> int:\n{body}\treturn -1\n")
+}
+
+pub fn record(config: &Config, rule: &str, entries: &[(&str, i64)]) {
+    let mut data = Data::empty();
+    data.rule_mut(rule)
+        .extend(entries.iter().map(|(key, value)| (key.to_string(), *value)));
+    baseline::write(&config.baseline_path(), &data).unwrap();
+}
+
+pub fn recorded(config: &Config, rule: &str) -> BTreeMap<String, i64> {
+    baseline::load(&config.baseline_path())
+        .unwrap()
+        .rule(rule)
+        .clone()
+}
+
+pub fn entries(pairs: &[(&str, i64)]) -> BTreeMap<String, i64> {
+    pairs
+        .iter()
+        .map(|(key, value)| (key.to_string(), *value))
+        .collect()
 }

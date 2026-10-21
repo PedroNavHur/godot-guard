@@ -2,6 +2,7 @@
 
 pub mod analyzer_config;
 pub mod baseline;
+pub mod check;
 pub mod comments;
 pub mod config;
 pub mod error;
