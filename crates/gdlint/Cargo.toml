@@ -9,3 +9,6 @@ rust-version.workspace = true
 gdscript = { path = "../gdscript" }
 regex = "1"
 saphyr-parser = "0.2"
+
+[dev-dependencies]
+serde_json = "1"
