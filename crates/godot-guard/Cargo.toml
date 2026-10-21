@@ -9,3 +9,11 @@ rust-version.workspace = true
 gdscript = { path = "../gdscript" }
 gdformat = { path = "../gdformat" }
 gdlint = { path = "../gdlint" }
+yaml-rust2 = "0.13.0"
+regex = "1.13.1"
+fancy-regex = "0.19.2"
+rayon = "1.12.0"
+libc = "0.2.191"
+signal-hook = "0.4.5"
+serde_json = "1.0.154"
+tempfile = "3.27.0"
