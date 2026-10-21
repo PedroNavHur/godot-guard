@@ -19,4 +19,5 @@ pub mod rules;
 pub mod scaffold;
 pub mod scripts;
 pub mod settings;
+pub mod tools;
 pub mod yaml;
