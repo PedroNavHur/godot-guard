@@ -1,4 +1,4 @@
-//! Locate Godot and gdtoolkit, and run Godot with its diagnostics treated as failures.
+//! Locate Godot, and run Godot with its diagnostics treated as failures.
 //!
 //! Every child runs in its own session and is registered while it lives, so a stop (SIGINT or SIGTERM)
 //! kills each one's whole process group and the gate leaves nothing running.
@@ -52,21 +52,6 @@ pub fn godot() -> Result<PathBuf> {
     Err(Failure::Tool(
         "Godot 4 not found: set $GODOT or put godot on PATH".into(),
     ))
-}
-
-/// gdformat or gdlint next to this executable, then on PATH.
-pub fn gdtoolkit(name: &str) -> Result<PathBuf> {
-    let beside = env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(name)));
-    if let Some(beside) = beside.filter(|path| executable(path)) {
-        return Ok(beside);
-    }
-    which(name).ok_or_else(|| {
-        Failure::Tool(format!(
-            "{name} not found: install gdtoolkit next to godot-guard"
-        ))
-    })
 }
 
 pub fn is_diagnostic(line: &str) -> bool {

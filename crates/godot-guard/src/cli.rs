@@ -5,7 +5,6 @@
 use std::env;
 use std::ffi::OsString;
 use std::io::{self, Write};
-use std::process::Command;
 
 use crate::argparse::{Exit, Kind, Namespace, Nargs, Opt, Parser};
 use crate::check::{self, Request};
@@ -14,6 +13,7 @@ use crate::error::{Failure, Result};
 use crate::gate;
 use crate::scaffold;
 use crate::scripts::Scripts;
+use crate::toolkit;
 use crate::tools;
 
 pub const VERSION: &str = concat!("godot-guard ", env!("CARGO_PKG_VERSION"));
@@ -159,13 +159,7 @@ fn format_files(config: &Config, files: &[String]) -> Result<i32> {
         println!("godot-guard format: no GDScript files selected");
         return Ok(0);
     }
-    // ceiling: gdformat runs as gdtoolkit's process, untracked as 0.4.0 runs it, until the gdformat crate lands.
-    let status = Command::new(tools::gdtoolkit("gdformat")?)
-        .args(&paths)
-        .current_dir(&config.root)
-        .status()
-        .map_err(|e| Failure::crash("gdformat", e))?;
-    Ok(tools::status_code(status))
+    toolkit::gdformat(&paths, &config.root, None)
 }
 
 fn run_gate(args: &Namespace) -> Result<i32> {

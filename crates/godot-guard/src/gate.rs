@@ -1,9 +1,7 @@
 //! `godot-guard gate`: the fast pre-commit gate and the full pre-push and CI gate.
 
-use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::check::{self, Request, select};
@@ -14,58 +12,31 @@ use crate::rules::Surfaces;
 use crate::schedule::{Out, Phase, Step, run_steps};
 use crate::scripts::Scripts;
 use crate::snapshot::{indexed, snapshot, staged};
-use crate::tools::{self, Echo, gdtoolkit, run_godot, run_process};
+use crate::toolkit;
+use crate::tools::{self, Echo, run_godot, run_process};
 
 pub const ANALYZER: &str = include_str!("../../../src/godot_guard/data/analyze_scripts.gd");
 
-/// One of two writers onto a shared buffer, so gdlint's stdout and stderr merge in the order it writes them.
-struct Merged<'a>(&'a RefCell<Vec<u8>>);
-
-impl Write for Merged<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.borrow_mut().extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-/// gdlint over `files` in `root`, in-process. Captured, its two streams merge into the echo, as the pipe
-/// 0.4.0 runs gdlint on merges them; otherwise they go to the terminal's.
-fn lint(files: &[String], root: &Path, echo: Option<Echo>) -> Result<i32> {
+/// `gdformat --check` or `gdlint` over `files`, run as 0.4.0 runs the commands, in the sources' root.
+fn gdtool(
+    tool: Tool,
+    args: &[&str],
+    files: &[String],
+    root: &Path,
+    echo: Option<Echo>,
+) -> Result<i32> {
     if files.is_empty() {
         return Ok(0);
     }
-    let failed = |e: io::Error| Failure::crash("writing gdlint's output", e);
-    let Some(echo) = echo else {
-        let (mut out, mut err) = (io::stdout().lock(), io::stderr().lock());
-        return gdlint::cli::run(files, root, &gdscript::parse, &mut out, &mut err).map_err(failed);
-    };
-    let buffer = RefCell::new(Vec::new());
-    let status = gdlint::cli::run(
-        files,
-        root,
-        &gdscript::parse,
-        &mut Merged(&buffer),
-        &mut Merged(&buffer),
-    );
-    for line in tools::read_lines(&buffer.borrow()[..]) {
-        echo(&line);
-    }
-    status.map_err(failed)
+    let argv: Vec<String> = args
+        .iter()
+        .map(|arg| arg.to_string())
+        .chain(files.iter().cloned())
+        .collect();
+    tool(&argv, root, echo)
 }
 
-/// ceiling: gdformat runs as gdtoolkit's process until the gdformat crate lands.
-fn gdformat(files: &[String], root: &Path, echo: Option<Echo>) -> Result<i32> {
-    if files.is_empty() {
-        return Ok(0);
-    }
-    let mut command: Vec<OsString> = vec![gdtoolkit("gdformat")?.into(), "--check".into()];
-    command.extend(files.iter().map(OsString::from));
-    run_process(&command, Some(root), &None, echo)
-}
+type Tool = fn(&[String], &Path, Option<Echo>) -> Result<i32>;
 
 pub fn res_path(path: &str) -> String {
     if path == "." {
@@ -144,14 +115,14 @@ pub fn steps_for<'a>(plan: &'a Plan<'a>, files: &'a [String], fast: bool) -> Vec
         steps.push(Step::new(
             "format",
             Phase::Prepare,
-            Box::new(move |echo, _| gdformat(files, root, echo)),
+            Box::new(move |echo, _| gdtool(toolkit::gdformat, &["--check"], files, root, echo)),
         ));
     }
     if gate.lint {
         steps.push(Step::new(
             "lint",
             Phase::Prepare,
-            Box::new(move |echo, _| lint(files, root, echo)),
+            Box::new(move |echo, _| gdtool(toolkit::gdlint, &[], files, root, echo)),
         ));
     }
     steps.push(Step::new(

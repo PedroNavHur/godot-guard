@@ -22,5 +22,6 @@ pub mod schedule;
 pub mod scripts;
 pub mod settings;
 pub mod snapshot;
+pub mod toolkit;
 pub mod tools;
 pub mod yaml;
