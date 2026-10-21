@@ -1,0 +1,9 @@
+# PyYAML 1.1 forms, and a `disable` string, which Python's `in` reads as a substring test.
+disable: class-definitions-order max-returns unused
+max-line-length: 0x64
+tab-characters: 0_4
+function-arguments-number: 1_0
+max-public-methods: 2:0
+function-name: '[\w]+'
+excluded_directories: !!set
+  skipped: null
