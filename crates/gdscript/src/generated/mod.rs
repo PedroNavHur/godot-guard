@@ -3,6 +3,5 @@
 
 #[rustfmt::skip]
 pub mod comments;
-#[allow(dead_code, reason = "read by parse(), added next")]
 #[rustfmt::skip]
 pub mod gdscript;

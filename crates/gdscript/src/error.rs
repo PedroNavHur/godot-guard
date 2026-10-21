@@ -23,6 +23,11 @@ pub enum ErrorKind {
     },
     /// lark's `UnexpectedCharacters`: no terminal matches at all.
     UnexpectedCharacters { character: char },
+    /// lark's `DedentError`.
+    Dedent { indent: usize, expected: usize },
+    /// A Python exception other than lark's that gdtoolkit's indenter can raise on bad input (an
+    /// `AssertionError` on unbalanced brackets).
+    Indenter(&'static str),
 }
 
 impl fmt::Display for ParseError {
@@ -53,6 +58,11 @@ impl fmt::Display for ParseError {
                 )?;
                 at(f)
             }
+            ErrorKind::Dedent { indent, expected } => write!(
+                f,
+                "Unexpected dedent to column {indent}. Expected dedent to {expected}"
+            ),
+            ErrorKind::Indenter(what) => f.write_str(what),
         }
     }
 }

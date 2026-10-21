@@ -2,6 +2,7 @@
 
 pub mod error;
 mod generated;
+mod indenter;
 mod lalr;
 mod lexer;
 mod matchers;
@@ -13,5 +14,5 @@ pub mod tree;
 mod tree_builder;
 
 pub use error::{ErrorKind, ParseError};
-pub use parser::parse_comments;
+pub use parser::{parse, parse_comments};
 pub use tree::{Node, Span, Token, Tree, intern};

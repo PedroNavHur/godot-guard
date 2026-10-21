@@ -1,7 +1,8 @@
 //! Port of lark 1.2.2's LALR runtime: `parse_from_state` (`lalr_parser.py`) and `feed_token`
-//! (`lalr_parser_state.py`).
+//! (`lalr_parser_state.py`), with the post-lexer between the contextual lexer and the parser.
 
 use crate::error::{ErrorKind, ParseError};
+use crate::indenter::Indenter;
 use crate::lexer::{Language, LexToken, Lexer, RawSpan};
 use crate::tables::{Action, Grammar};
 use crate::tree::{Node, Tree};
@@ -16,8 +17,9 @@ pub fn parse(language: &'static Language, text: &str) -> Result<Tree, ParseError
         value_stack: Vec::new(),
     };
     let mut lexer = Lexer::new(language, text);
+    let mut indenter = Indenter::new(grammar);
     let mut last: Option<LexToken<'_>> = None;
-    while let Some(token) = lexer.lex(parser.position())? {
+    while let Some(token) = indenter.next(&mut lexer, parser.position())? {
         parser.feed_token(token, false)?;
         last = Some(token);
     }
