@@ -3,14 +3,18 @@
 //! Help texts are 0.4.0's at 80 columns; argparse rewraps them to the terminal's width, this does not.
 
 use std::env;
+use std::ffi::OsString;
 use std::io::{self, Write};
+use std::process::Command;
 
 use crate::argparse::{Exit, Kind, Namespace, Nargs, Opt, Parser};
 use crate::check::{self, Request};
 use crate::config::{self, AUTO, Config, Jobs};
 use crate::error::{Failure, Result};
+use crate::gate;
 use crate::scaffold;
 use crate::scripts::Scripts;
+use crate::tools;
 
 pub const VERSION: &str = concat!("godot-guard ", env!("CARGO_PKG_VERSION"));
 
@@ -145,6 +149,40 @@ pub fn gate_jobs(config: &Config, args: &Namespace) -> Jobs {
     }
 }
 
+fn format_files(config: &Config, files: &[String]) -> Result<i32> {
+    let paths = if files.is_empty() {
+        config.scanned_files()
+    } else {
+        check::select(config, files)
+    };
+    if paths.is_empty() {
+        println!("godot-guard format: no GDScript files selected");
+        return Ok(0);
+    }
+    // ceiling: gdformat runs as gdtoolkit's process, untracked as 0.4.0 runs it, until the gdformat crate lands.
+    let status = Command::new(tools::gdtoolkit("gdformat")?)
+        .args(&paths)
+        .current_dir(&config.root)
+        .status()
+        .map_err(|e| Failure::crash("gdformat", e))?;
+    Ok(tools::status_code(status))
+}
+
+fn run_gate(args: &Namespace) -> Result<i32> {
+    if args.flag("staged") && !args.positionals.is_empty() {
+        eprintln!("godot-guard gate: pass --staged or files, not both");
+        return Ok(1);
+    }
+    let mut config = load()?;
+    config.gate.jobs = gate_jobs(&config, args);
+    gate::gate(
+        &config,
+        args.flag("fast"),
+        args.flag("staged"),
+        &args.positionals,
+    )
+}
+
 fn run_command(args: &Namespace) -> Result<i32> {
     let scripts = Scripts::new();
     let (status, text) = match args
@@ -172,8 +210,20 @@ fn run_command(args: &Namespace) -> Result<i32> {
             let (root, _) = config::find_root(&cwd)?;
             (scaffold::init(&root)?, String::new())
         }
-        // ceiling: format, run, and gate arrive with the tools and schedule ports.
-        other => return Err(Failure::Tool(format!("{other} is not ported yet"))),
+        "format" => (format_files(&load()?, &args.positionals)?, String::new()),
+        "run" => {
+            let godot_args = match args.positionals.split_first() {
+                Some((first, rest)) if first == "--" => rest,
+                _ => &args.positionals[..],
+            };
+            let godot_args: Vec<OsString> = godot_args.iter().map(OsString::from).collect();
+            (
+                tools::run_godot(&godot_args, None, &None, None)?,
+                String::new(),
+            )
+        }
+        "gate" => (run_gate(args)?, String::new()),
+        other => unreachable!("argparse accepted the command {other}"),
     };
     emit(&text);
     Ok(status)

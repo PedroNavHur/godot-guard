@@ -9,6 +9,7 @@ pub mod comments;
 pub mod config;
 pub mod error;
 pub mod fnmatch;
+pub mod gate;
 pub mod godot_warnings;
 pub mod interface;
 pub mod jobs;
