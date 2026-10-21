@@ -6,7 +6,6 @@ import unittest
 from godot_guard import analyzer_config
 from godot_guard.check import check
 from godot_guard.config import ConfigError
-from godot_guard.godot_warnings import ERROR, REQUIRED
 
 from .fixtures import HEXSTEAD_WARNINGS
 from .helpers import Repo, captured, strict_project
@@ -83,9 +82,8 @@ class AnalyzerConfigTest(unittest.TestCase):
         self.assertEqual(self.problems(hexstead_project()), [])
 
     def test_dropping_one_of_hexsteads_settings_names_it(self):
-        """Dropping a name Godot defaults below error reports it; names that default to error are skipped."""
-        below_error = [name for name in HEXSTEAD_WARNINGS if REQUIRED[name] < ERROR]
-        for name in below_error:
+        """Skipping any of hexstead's settings yields one problem that names it."""
+        for name in HEXSTEAD_WARNINGS:
             with self.subTest(name=name):
                 [problem] = self.problems(hexstead_project(skipped=name))
                 self.assertIn(name, problem.message)
