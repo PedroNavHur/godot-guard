@@ -10,5 +10,10 @@ rust-version.workspace = true
 oracle = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
+unicode-ident = "1"
 serde_json = { version = "1", optional = true, features = ["unbounded_depth"] }
 serde = { version = "1", optional = true }
+
+[dev-dependencies]
+# The parity tests read oracle dumps.
+gdscript = { path = ".", features = ["oracle"] }
