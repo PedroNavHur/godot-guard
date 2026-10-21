@@ -2,4 +2,5 @@
 //!
 //! Ports `complexity.py`, `patterns.py`, and the piece of `interface.py` they use, module for module.
 
+pub mod complexity;
 pub mod interface;
