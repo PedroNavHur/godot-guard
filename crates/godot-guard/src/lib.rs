@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 pub mod fnmatch;
 pub mod godot_warnings;
+pub mod interface;
 pub mod jobs;
 pub mod json;
 pub mod py;
