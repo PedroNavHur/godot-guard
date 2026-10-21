@@ -15,6 +15,7 @@ pub mod json;
 pub mod parse;
 pub mod py;
 pub mod rules;
+pub mod scaffold;
 pub mod scripts;
 pub mod settings;
 pub mod yaml;
