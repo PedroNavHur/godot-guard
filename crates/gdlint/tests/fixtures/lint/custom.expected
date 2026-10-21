@@ -1,0 +1,27 @@
+exit 1
+--- stdout
+--- stderr
+../default/format.gd:6: Error: Max allowed line length (100) exceeded (max-line-length)
+../default/format.gd:8: Error: Max allowed line length (100) exceeded (max-line-length)
+../default/format.gd:1: Error: Trailing whitespace(s) (trailing-whitespace)
+../default/format.gd:3: Error: Trailing whitespace(s) (trailing-whitespace)
+../default/format.gd:5: Error: Trailing whitespace(s) (trailing-whitespace)
+../default/format.gd:5: Error: Mixed tabs and spaces (mixed-tabs-and-spaces)
+../default/format.gd:6: Error: Mixed tabs and spaces (mixed-tabs-and-spaces)
+../default/format.gd:8: Error: Mixed tabs and spaces (mixed-tabs-and-spaces)
+../default/format.gd:9: Error: Mixed tabs and spaces (mixed-tabs-and-spaces)
+../default/design.gd:22: Error: Function "g" has more than 10 arguments (function-arguments-number)
+../default/design.gd:22: Error: unused function argument 'a1' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a2' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a3' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a4' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a5' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a6' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a7' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a8' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a9' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a10' (unused-argument)
+../default/design.gd:22: Error: unused function argument 'a11' (unused-argument)
+../default/directives.gd:2: Error: Class-scope variable name "Early" is not valid (class-variable-name)
+tree/kept.gd:1: Error: unused function argument 'unused' (unused-argument)
+Failure: 23 problems found
