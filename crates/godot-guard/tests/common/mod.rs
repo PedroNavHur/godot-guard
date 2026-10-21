@@ -1,6 +1,8 @@
 //! Temporary Godot repositories for the tests, as `tests/helpers.py` builds them.
 #![allow(dead_code)]
 
+pub mod shim;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
