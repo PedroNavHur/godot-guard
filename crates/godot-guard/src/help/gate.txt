@@ -1,0 +1,11 @@
+usage: godot-guard gate [-h] [--fast] [--staged] [--jobs N|auto] [files ...]
+
+positional arguments:
+  files
+
+optional arguments:
+  -h, --help     show this help message and exit
+  --fast         format, lint, and check only
+  --staged       select staged .gd files
+  --jobs N|auto  run steps in parallel on N workers, or auto; overrides
+                 gate.jobs
