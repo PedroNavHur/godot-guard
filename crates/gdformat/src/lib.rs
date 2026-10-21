@@ -19,6 +19,7 @@ mod formatter;
 mod function_statement;
 mod function_statement_to_str;
 mod node;
+mod parse;
 mod property;
 mod py;
 mod safety_checks;
@@ -27,4 +28,5 @@ mod types;
 mod var_statement;
 
 pub use formatter::format_code;
+pub use parse::{ParseFailure, parse_code};
 pub use safety_checks::{ParsedCode, SafetyError, SafetyViolation, check_formatting_safety};
