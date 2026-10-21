@@ -62,6 +62,11 @@ rules:                    # set a rule to off to disable it
   interface-cap: error
   nested-ternary: warn    # Pedro's rule: advisory, never a merge blocker
   analyzer-config: error
+  lookup-in-hot-path: error
+  load-in-hot-path: error
+  private-export: error
+  self-assign: error
+  per-frame-allocation: warn  # advisory, like nested-ternary
 relaxed-warnings: []      # analyzer warnings project.godot may keep below error
 boundaries: []            # see "boundary"
 gate:

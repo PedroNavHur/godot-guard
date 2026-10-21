@@ -12,11 +12,14 @@ from pathlib import Path
 import yaml
 
 from .godot_warnings import REQUIRED
+from .patterns import ADVISORY as PATTERN_ADVISORY
+from .patterns import COUNTED
 
 CONFIG_NAME = ".godot-guard.yml"
 BASELINE_NAME = ".godot-guard-baseline.json"
 LEVELS = ("error", "warn", "off")
-BASELINED = ("cognitive-complexity", "cyclomatic-complexity", "long-comment", "interface-cap")
+BASELINED = ("cognitive-complexity", "cyclomatic-complexity", "long-comment", "interface-cap", *COUNTED)
+ADVISORY = ("nested-ternary", *PATTERN_ADVISORY)
 DEFAULTS = {
     "paths": ["."],
     "exclude": ["addons/**", ".godot/**"],
@@ -28,6 +31,11 @@ DEFAULTS = {
         "interface-cap": "error",
         "nested-ternary": "warn",
         "analyzer-config": "error",
+        "lookup-in-hot-path": "error",
+        "load-in-hot-path": "error",
+        "private-export": "error",
+        "self-assign": "error",
+        "per-frame-allocation": "warn",
     },
     "relaxed-warnings": [],
     "boundaries": [],
@@ -274,7 +282,8 @@ def validate(config: Config) -> None:
         expect(isinstance(value, int) and not isinstance(value, bool) and value >= 0, f"limits.{key} must be a whole number")
     for rule, level in config.rules.items():
         expect(level in LEVELS, f"rules.{rule} must be one of {', '.join(LEVELS)}")
-    expect(config.rules["nested-ternary"] != "error", "rules.nested-ternary is advisory: use warn or off")
+    for rule in ADVISORY:
+        expect(config.rules[rule] != "error", f"rules.{rule} is advisory: use warn or off")
     gate = config.gate
     for key in ("format", "lint", "import", "analyzer"):
         expect(isinstance(gate[key], bool), f"gate.{key} must be true or false")

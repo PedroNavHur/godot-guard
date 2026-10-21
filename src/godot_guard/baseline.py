@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import BASELINE_NAME, BASELINED, Config
+from .patterns import COUNTED
 from .rules import FileResult, Item, Problem
 
 LIMIT_OF = {
@@ -15,10 +16,12 @@ LIMIT_OF = {
     "interface-cap": "inputs",
 }
 TREE_RULES = ("cognitive-complexity", "cyclomatic-complexity")
+# Measured on the parse tree: a file that fails to parse has no item, so its entries are not missing.
+PARSED_RULES = (*TREE_RULES, *COUNTED)
 
 
 def limit(config: Config, rule: str) -> int:
-    """Counted rules such as long-comment count hits, so any is over."""
+    """Counted rules (long-comment, the pattern rules) count hits, so any is over."""
     if rule not in LIMIT_OF:
         return 0
     return config.limits[LIMIT_OF[rule]]
@@ -115,7 +118,7 @@ def in_scope(rule: str, key: str, subset: set[str] | None, unparsed: set[str]) -
     path = item_path(rule, key)
     if subset is not None and path not in subset:
         return False
-    return not (rule in TREE_RULES and path in unparsed)
+    return not (rule in PARSED_RULES and path in unparsed)
 
 
 def judge(config: Config) -> Judge:

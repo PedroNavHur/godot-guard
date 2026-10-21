@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import comments, complexity, interface
+from . import comments, complexity, interface, patterns
 from .config import Config, matches, walk_scripts
 
 
@@ -136,6 +136,17 @@ def tree_rules(result: FileResult, source: str) -> None:
     for line in complexity.nested_ternaries(tree):
         message = "nested conditional expression; use if/else, match, or a helper"
         result.problems.append(Problem(result.path, line, message, "nested-ternary", "warn"))
+    pattern_rules(result, patterns.scan(tree))
+
+
+def pattern_rules(result: FileResult, hits: patterns.Hits) -> None:
+    """One counted item per file for each COUNTED rule, located at its hits; a warning per ADVISORY hit."""
+    for rule, noun in patterns.COUNTED.items():
+        found = hits[rule]
+        line = found[0][0] if found else 1
+        result.items.append(Item(rule, result.path, result.path, line, len(found), f"{len(found)} {noun}", found))
+    for rule in patterns.ADVISORY:
+        result.problems += [Problem(result.path, line, message, rule, "warn") for line, message in hits[rule]]
 
 
 def comment_item(config: Config, path: str, source: str) -> Item:

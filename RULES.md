@@ -61,3 +61,34 @@ the details).
   names warnings it skips; a name outside the set is a config error. It runs
   only when `check` covers the whole project, never on named files or the
   staged gate, and is never baselined.
+
+### Pattern rules
+
+`patterns.py` matches these on the parse tree. A *hot function* is
+`_process`, `_physics_process`, `_input`, `_unhandled_input`,
+`_unhandled_key_input`, `_gui_input`, or `_shortcut_input`, in the script or
+an inner class; the *frame functions* are the first two. Lambdas inside a hot
+function are skipped, since they run when called, and scripts that extend
+`SceneTree` or `MainLoop` (test and tool runners) are exempt from the
+hot-path rules. Only code written in the hot function counts, not the
+helpers it calls.
+
+The four counted rules are baselined like long-comment: one item per file
+whose value is its count of hits, key `path`, limit 0, each hit reported on
+its own line. A file that fails to parse keeps its entries.
+
+- **lookup-in-hot-path**: `$path`, `%name`, or a call to `get_node`,
+  `get_node_or_null`, `find_child`, `find_children`, `find_parent`,
+  `get_nodes_in_group`, or `get_first_node_in_group` (on any receiver) in a
+  hot function. pedro-best-practices `godot/lookup-in-hot-path`.
+- **load-in-hot-path**: a `load()` call, bare or on a receiver such as
+  `ResourceLoader`, in a hot function. `preload` is resolved at compile time
+  and passes. pedro-best-practices `godot/load-in-hot-path`.
+- **private-export**: a class variable named with a leading `_` under an
+  `@export` annotation of any kind except group, subgroup, and category.
+- **self-assign**: `x = x`, the two sides equal as parse trees (`self.a =
+  self.a` too). Compound assignment (`x += x`) passes.
+- **per-frame-allocation**: an array or dictionary literal or a `.new()` call
+  in a frame function. Advisory like nested-ternary: a warning, never
+  baselined, never a failure; `error` is a config error.
+  pedro-best-practices `godot/per-frame-allocation`.
