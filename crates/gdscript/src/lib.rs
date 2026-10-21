@@ -2,6 +2,8 @@
 
 #[cfg(feature = "oracle")]
 pub mod oracle;
+#[allow(dead_code, reason = "read by the parser runtime added next")]
+mod tables;
 pub mod tree;
 
 pub use tree::{Node, Span, Token, Tree, intern};
