@@ -47,3 +47,17 @@ the details).
   `&""` and `^""` literals and triple-quoted strings, is not a comment) in a
   matching file is searched for each pattern. String contents are searched. Not baselined: existing hits must be fixed before adoption.
   hexstead's `domain-boundary` rule moves here unchanged.
+- **analyzer-config**: `project.godot` sets each GDScript analyzer warning in
+  `godot_warnings.REQUIRED` to 2 (error) in its `[debug]` section. The
+  analyzer step fails only at error: loaded headless, Godot 4.7 prints
+  nothing for a warning at 1, so a warning left there is never checked. The
+  set is hexstead's 43 plus the four Godot defaults to error
+  (`get_node_default_without_onready`, `inference_on_variant`,
+  `native_method_override`, `onready_with_export`), which may not be lowered;
+  a setting the file omits takes Godot's default. It reports each required
+  setting below error on its line, one problem on the `[debug]` header (line
+  1 without one) listing the omitted ones whose default is below error, and
+  `gdscript/warnings/enable` set to anything but `true`. `relaxed-warnings`
+  names warnings it skips; a name outside the set is a config error. It runs
+  only when `check` covers the whole project, never on named files or the
+  staged gate, and is never baselined.

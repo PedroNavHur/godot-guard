@@ -11,6 +11,8 @@ from pathlib import Path
 
 import yaml
 
+from .godot_warnings import REQUIRED
+
 CONFIG_NAME = ".godot-guard.yml"
 BASELINE_NAME = ".godot-guard-baseline.json"
 LEVELS = ("error", "warn", "off")
@@ -25,7 +27,9 @@ DEFAULTS = {
         "long-comment": "error",
         "interface-cap": "error",
         "nested-ternary": "warn",
+        "analyzer-config": "error",
     },
+    "relaxed-warnings": [],
     "boundaries": [],
     "gate": {
         "format": True,
@@ -85,6 +89,7 @@ class Config:
     limits: dict = field(default_factory=lambda: dict(DEFAULTS["limits"]))
     rules: dict = field(default_factory=lambda: dict(DEFAULTS["rules"]))
     boundaries: list = field(default_factory=list)
+    relaxed_warnings: list[str] = field(default_factory=list)
     gate: dict = field(default_factory=lambda: copy.deepcopy(DEFAULTS["gate"]))
 
     @property
@@ -174,6 +179,7 @@ def apply(config: Config, data) -> None:
     entries = given(data, "boundaries", [])
     expect(isinstance(entries, list), "boundaries must be a list")
     config.boundaries = [boundary(entry) for entry in entries]
+    config.relaxed_warnings = relaxed(given(data, "relaxed-warnings", []))
     validate(config)
 
 
@@ -253,6 +259,14 @@ def boundary(entry) -> dict:
         "forbid": string_list(given(entry, "forbid", []), f"boundary {name} forbid"),
         "message": str(given(entry, "message", "")),
     }
+
+
+def relaxed(value) -> list[str]:
+    """`relaxed-warnings`: names from godot_warnings.REQUIRED that project.godot may keep below error."""
+    names = string_list(value, "relaxed-warnings")
+    for name in names:
+        expect(name in REQUIRED, f"relaxed-warnings: {name!r} is not a warning analyzer-config requires")
+    return names
 
 
 def validate(config: Config) -> None:

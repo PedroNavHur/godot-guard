@@ -12,6 +12,8 @@ rules:
   long-comment: error
   interface-cap: error
   nested-ternary: warn
+  analyzer-config: error
+relaxed-warnings: []
 boundaries: []
 gate:
   format: true

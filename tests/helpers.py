@@ -8,13 +8,20 @@ import tempfile
 from pathlib import Path
 
 from godot_guard import config as config_module
+from godot_guard.godot_warnings import ERROR, REQUIRED
+
+
+def strict_project() -> str:
+    """A project.godot that passes analyzer-config: every required warning at error."""
+    settings = "".join(f"gdscript/warnings/{name}={ERROR}\n" for name in REQUIRED)
+    return "config_version=5\n\n[debug]\n\n" + settings
 
 
 class Repo:
     def __init__(self, files: dict[str, str], config_text: str | None = None):
         self._temp = tempfile.TemporaryDirectory()
         self.root = Path(self._temp.name).resolve()
-        self.write("project.godot", "config_version=5\n")
+        self.write("project.godot", strict_project())
         if config_text is not None:
             self.write(".godot-guard.yml", config_text)
         for name, text in files.items():

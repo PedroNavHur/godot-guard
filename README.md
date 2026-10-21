@@ -10,6 +10,7 @@ tsc, Husky, and CI, with a ratchet baseline so existing code can adopt them.
 | oxfmt / `format:check` | `gdformat --check` | gdtoolkit |
 | oxlint core rules | `gdlint` with `.gdlintrc` | gdtoolkit |
 | `tsc` strict, `no-unsafe-*` | analyzer warnings set to error in `project.godot`, every script loaded headless | Godot |
+| `strict: true` in tsconfig | `analyzer-config`: `project.godot` keeps those warnings at error | godot-guard |
 | `complexity` 16, `cognitive-complexity` 8 | `cyclomatic-complexity`, `cognitive-complexity` | godot-guard |
 | `max-lines` | none: fleet's `file-size` check caps every file at 20,000 bytes, in any language | fleet |
 | `no-long-comment` | `long-comment` | godot-guard |
@@ -148,6 +149,8 @@ rules:          # error, warn, or off
   long-comment: error
   interface-cap: error
   nested-ternary: warn
+  analyzer-config: error
+relaxed-warnings: []  # analyzer warnings project.godot may keep below error
 boundaries:
   - name: simulation-domain
     paths: [scripts/simulation/**]
@@ -192,7 +195,7 @@ the old entry as stale and the lambda as a new violation. Fix it by refactoring
 the lambda below the limit, or by renaming the entry's key in the baseline by
 hand.
 
-Boundary hits and nested ternaries are never baselined.
+Boundary hits, nested ternaries, and `analyzer-config` are never baselined.
 
 ## Development
 

@@ -14,6 +14,7 @@ hexstead (`PedroNavHur/hexstead`) and wingmen (`PedroNavHur/heavenrest`).
 | oxfmt / `format:check` | `gdformat --check` | gdtoolkit |
 | oxlint core rules | `gdlint` with `.gdlintrc` | gdtoolkit |
 | `tsc` strict, `no-unsafe-*` | GDScript analyzer warnings set to error in `project.godot`, loaded headless | Godot |
+| `strict: true` in tsconfig | `analyzer-config` (those warnings stay at error) | godot-guard |
 | `complexity` max 16, `cognitive-complexity` max 8 | `cognitive-complexity`, `cyclomatic-complexity` | godot-guard |
 | `max-lines` | none: fleet's `file-size` check caps every file at 20,000 bytes, in any language | fleet |
 | `no-long-comment` | `long-comment` | godot-guard |
@@ -60,6 +61,8 @@ rules:                    # set a rule to off to disable it
   long-comment: error
   interface-cap: error
   nested-ternary: warn    # Pedro's rule: advisory, never a merge blocker
+  analyzer-config: error
+relaxed-warnings: []      # analyzer warnings project.godot may keep below error
 boundaries: []            # see "boundary"
 gate:
   format: true            # gdformat --check <paths>
