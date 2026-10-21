@@ -11,6 +11,7 @@ use gdscript::Tree;
 use regex::Regex;
 
 pub mod ast;
+mod basic_checks;
 mod class_checks;
 pub mod config;
 mod design_checks;
@@ -43,6 +44,7 @@ pub fn lint_code(gdscript_code: &str, parse_tree: &Tree, config: &Config) -> Vec
     let mut problems = design_checks::lint(&ast, config);
     problems.extend(name_checks::lint(&subtrees, config));
     problems.extend(class_checks::lint(&ast, config));
+    problems.extend(basic_checks::lint(&subtrees, config));
 
     let inactive = fetch_problem_inactivity_lines(gdscript_code);
     problems.retain(|problem| {
