@@ -8,6 +8,8 @@
 #![allow(dead_code)]
 
 mod annotation;
+mod block;
+mod class_statement;
 mod const_statement;
 mod constants;
 mod context;
@@ -15,8 +17,10 @@ mod dot_chain;
 mod expression;
 mod expression_to_str;
 mod expression_utils;
+mod function_statement;
 mod function_statement_to_str;
 mod node;
+mod property;
 mod py;
 mod statement_utils;
 mod types;
