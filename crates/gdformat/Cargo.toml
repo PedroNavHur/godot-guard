@@ -7,3 +7,10 @@ rust-version.workspace = true
 
 [dependencies]
 gdscript = { path = "../gdscript" }
+yaml-rust2 = "0.13"
+
+[dev-dependencies]
+# The parity tests also format gdtoolkit's own trees, read through gdscript's oracle loader.
+gdscript = { path = "../gdscript", features = ["oracle"] }
+serde = "1"
+serde_json = { version = "1", features = ["unbounded_depth"] }
