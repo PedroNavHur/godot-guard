@@ -9,7 +9,9 @@
 
 mod constants;
 mod context;
+mod expression_to_str;
 mod expression_utils;
+mod function_statement_to_str;
 mod node;
 mod py;
 mod statement_utils;
