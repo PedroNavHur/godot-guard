@@ -8,6 +8,7 @@ mod annotation;
 mod block;
 mod class_statement;
 mod comments;
+pub mod config;
 mod const_statement;
 mod constants;
 mod context;
