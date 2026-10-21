@@ -16,15 +16,34 @@ fn read_like_python(path: &Path) -> String {
 /// Relative dump paths resolve against `base`.
 pub fn compare(dump: &Dump, base: &Path) -> Result<bool, String> {
     match dump {
-        Dump::Parsed { path, comments, .. } => {
+        Dump::Parsed {
+            path,
+            tree,
+            comments,
+        } => {
             let source = read_like_python(&base.join(path));
+            let ours = gdscript::parse(&source)
+                .map_err(|e| format!("{path}: rejected ({e}); gdtoolkit parses it"))?;
+            first_difference(&ours, tree, "tree")
+                .map_or(Ok(()), |d| Err(format!("{path}: {d}")))?;
             let ours = gdscript::parse_comments(&source)
                 .map_err(|e| format!("{path}: comments rejected ({e}); gdtoolkit parses them"))?;
             first_difference(&ours, comments, "comments")
                 .map_or(Ok(true), |d| Err(format!("{path}: {d}")))
         }
-        // gdtoolkit's parse raised it, or its parse_comments: only the comments parser exists so far.
-        Dump::Rejected { .. } => Ok(false),
+        Dump::Rejected { path, error } => {
+            let source = read_like_python(&base.join(path));
+            let expected_line = error["line"].as_u64().map(|n| n as usize);
+            let ours = gdscript::parse(&source).and_then(|_| gdscript::parse_comments(&source));
+            match ours {
+                Err(e) if e.line == expected_line => Ok(false),
+                Err(e) => Err(format!(
+                    "{path}: rejected at line {:?} ({e}); gdtoolkit at {expected_line:?}: {error}",
+                    e.line
+                )),
+                Ok(_) => Err(format!("{path}: parsed; gdtoolkit rejects it: {error}")),
+            }
+        }
     }
 }
 

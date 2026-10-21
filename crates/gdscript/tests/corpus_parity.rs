@@ -43,7 +43,7 @@ fn corpus_matches_gdtoolkit() {
         }
     }
     eprintln!(
-        "corpus parity: {} files, {parsed} with identical comments, {rejected} rejected by gdtoolkit (not compared yet), {} differing",
+        "corpus parity: {} files, {parsed} parsed and {rejected} rejected identically, {} differing",
         dumps.len(),
         failures.len()
     );
