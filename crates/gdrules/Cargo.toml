@@ -1,0 +1,14 @@
+[package]
+name = "gdrules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gdscript = { path = "../gdscript" }
+
+[dev-dependencies]
+gdscript = { path = "../gdscript", features = ["oracle"] }
+serde_json = { version = "1", features = ["unbounded_depth"] }
+serde = "1"

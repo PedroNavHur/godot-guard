@@ -17,6 +17,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdrules"
+version = "0.5.0"
+dependencies = [
+ "gdscript",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gdscript"
 version = "0.5.0"
 dependencies = [
