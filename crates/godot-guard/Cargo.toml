@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 gdscript = { path = "../gdscript" }
+gdrules = { path = "../gdrules" }
 gdformat = { path = "../gdformat" }
 gdlint = { path = "../gdlint" }
 yaml-rust2 = "0.13.0"

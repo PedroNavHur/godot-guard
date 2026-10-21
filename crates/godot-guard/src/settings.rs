@@ -5,9 +5,9 @@ use crate::config::{AUTO, Boundary, CONFIG_NAME, Config, Jobs, Level, Limits, Te
 use crate::error::{Failure, Result};
 use crate::fnmatch::Pattern;
 use crate::godot_warnings;
-use crate::patterns::{ADVISORY as PATTERN_ADVISORY, COUNTED};
 use crate::py;
 use crate::yaml::Value;
+use gdrules::patterns::{ADVISORY as PATTERN_ADVISORY, COUNTED};
 
 pub const DEFAULT_EXCLUDE: [&str; 2] = ["addons/**", ".godot/**"];
 pub const DEFAULT_RULES: [(&str, Level); 11] = [
