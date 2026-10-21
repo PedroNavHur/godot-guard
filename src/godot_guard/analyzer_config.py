@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .config import Config
+from .config import Config, matches
 from .godot_warnings import ERROR, REQUIRED
 from .rules import Problem
 
@@ -17,6 +17,8 @@ PROJECT = "project.godot"
 RULE = "analyzer-config"
 SECTION = re.compile(r"\[([^\]]+)\]\s*$")
 WARNING = re.compile(r"gdscript/warnings/(\w+)\s*=\s*(.*?)\s*$")
+DIRECTORY_RULES = re.compile(r"gdscript/warnings/directory_rules=\{([^}]*)\}")
+DIRECTORY_ENTRY = re.compile(r'"res://([^"]*)"\s*:\s*(\d+)')
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,20 @@ def disabled(settings: dict[str, Setting]) -> list[tuple[int, str]]:
     return [(enable.line, "gdscript/warnings/enable turns every analyzer warning off; remove the setting")]
 
 
+def directory_rules_off(lines: list[tuple[int, str]], config: Config) -> list[tuple[int, str]]:
+    """(line, message) for each `directory_rules` entry that turns warnings off under a path the scan covers."""
+    body = "\n".join(line for _, line in lines)
+    found = []
+    for setting in DIRECTORY_RULES.finditer(body):
+        line = lines[body.count("\n", 0, setting.start())][0]
+        for path, level in DIRECTORY_ENTRY.findall(setting.group(1)):
+            if level == "0" and not matches(path + "/", config.exclude):
+                message = (f"gdscript/warnings/directory_rules turns analyzer warnings off under res://{path}; "
+                           "remove that entry")
+                found.append((line, message))
+    return found
+
+
 def findings(settings: dict[str, Setting], relaxed: list[str], header: int) -> list[tuple[int, str]]:
     """(line, message) for warnings off, each required one set below error, and those left at a lower default."""
     found = disabled(settings)
@@ -81,4 +97,5 @@ def problems(config: Config) -> list[Problem]:
     lines = debug_lines(path.read_text(encoding="utf-8", errors="replace"))
     header = lines[0][0] if lines else 1
     found = findings(read_settings(lines), config.relaxed_warnings, header)
+    found += directory_rules_off(lines, config)
     return [Problem(PROJECT, line, message, RULE, level) for line, message in found]

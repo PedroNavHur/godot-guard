@@ -53,14 +53,18 @@ the details).
   nothing for a warning at 1, so a warning left there is never checked. The
   set is hexstead's 43 plus the four Godot defaults to error
   (`get_node_default_without_onready`, `inference_on_variant`,
-  `native_method_override`, `onready_with_export`), which may not be lowered;
-  a setting the file omits takes Godot's default. It reports each required
-  setting below error on its line, one problem on the `[debug]` header (line
-  1 without one) listing the omitted ones whose default is below error, and
-  `gdscript/warnings/enable` set to anything but `true`. `relaxed-warnings`
-  names warnings it skips; a name outside the set is a config error. It runs
-  only when `check` covers the whole project, never on named files or the
-  staged gate, and is never baselined.
+  `native_method_override`, `onready_with_export`); lowering any of them is
+  reported unless `relaxed-warnings` names it. A setting the file omits takes
+  Godot's default. It reports each required setting below error on its line,
+  one problem on the `[debug]` header (line 1 without one) listing the omitted
+  ones whose default is below error, and `gdscript/warnings/enable` set to
+  anything but `true`. It also reports each `gdscript/warnings/directory_rules`
+  entry that sets `0` (warnings off for that directory and everything below)
+  under a path the scan covers, on the setting's first line; a path `exclude`
+  already covers, such as Godot's default `res://addons`, is not reported.
+  `relaxed-warnings` names warnings it skips; a name outside the set is a
+  config error. It runs only when `check` covers the whole project, never on
+  named files or the staged gate, and is never baselined.
 
 ### Pattern rules
 
@@ -85,7 +89,9 @@ its own line. A file that fails to parse keeps its entries.
   `ResourceLoader`, in a hot function. `preload` is resolved at compile time
   and passes. pedro-best-practices `godot/load-in-hot-path`.
 - **private-export**: a class variable named with a leading `_` under an
-  `@export` annotation of any kind except group, subgroup, and category.
+  `@export` annotation of any kind except group, subgroup, category, and
+  `export_storage`, which the inspector does not show, so a private name is
+  its purpose.
 - **self-assign**: `x = x`, the two sides equal as parse trees (`self.a =
   self.a` too). Compound assignment (`x += x`) passes.
 - **per-frame-allocation**: an array or dictionary literal or a `.new()` call

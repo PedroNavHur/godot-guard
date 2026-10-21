@@ -8,7 +8,7 @@ test and tool runners, not game code, and are exempt from the hot-path rules.
 from __future__ import annotations
 
 from .complexity import first_name, is_tree
-from .interface import NOT_VARIABLES
+from .interface import is_export_annotation
 
 FRAME_FUNCTIONS = frozenset({"_process", "_physics_process"})
 HOT_FUNCTIONS = FRAME_FUNCTIONS | {"_input", "_unhandled_input", "_unhandled_key_input", "_gui_input", "_shortcut_input"}
@@ -19,6 +19,10 @@ LOOKUP_CALLS = frozenset({
 NODE_PATHS = {"get_node": "$path", "unique_node_path": "%name"}
 LITERALS = {"array": "an array literal", "dict": "a dictionary literal"}
 RUNNERS = frozenset({"SceneTree", "MainLoop"})
+EXTENDS_STATEMENTS = frozenset({"extends_stmt", "classname_extends_stmt"})
+HOT_RULES = ("lookup-in-hot-path", "load-in-hot-path", "per-frame-allocation")
+# Hidden from the inspector, so a private name is their purpose.
+STORAGE_EXPORTS = frozenset({"export_storage"})
 
 # Baselined per file, counted like long-comment: rule -> the noun its count labels.
 COUNTED = {
@@ -57,15 +61,22 @@ def hot_hit(node, function: str) -> tuple[str, str] | None:
     return None
 
 
+def subtrees(node) -> list:
+    """The child subtrees of `node`; a `$%name` is one lookup, so its path child is skipped."""
+    if node.data == "get_node":
+        return []
+    return [child for child in node.children if is_tree(child)]
+
+
 def body_nodes(node):
     """Every subtree below `node`, without descending into lambdas."""
-    pending = [child for child in node.children if is_tree(child)]
+    pending = subtrees(node)
     while pending:
         current = pending.pop()
         if current.data == "lambda":
             continue
         yield current
-        pending.extend(child for child in current.children if is_tree(child))
+        pending.extend(subtrees(current))
 
 
 def hot_functions(tree) -> list[tuple[str, object]]:
@@ -76,17 +87,19 @@ def hot_functions(tree) -> list[tuple[str, object]]:
     return [(name, function) for name, function in named if name in HOT_FUNCTIONS]
 
 
-def hot_hits(tree, found: Hits) -> None:
+def hot_hits(tree) -> Hits:
+    found: Hits = {rule: [] for rule in HOT_RULES}
     for name, function in hot_functions(tree):
         for node in body_nodes(function):
             hit = hot_hit(node, name)
             if hit:
                 found[hit[0]].append((node.meta.line, hit[1]))
+    return found
 
 
 def is_export(annotation) -> bool:
     name = str(annotation.children[0]) if annotation.children else ""
-    return name.startswith("export") and name not in NOT_VARIABLES
+    return is_export_annotation(name) and name not in STORAGE_EXPORTS
 
 
 def exported_variables(body) -> list:
@@ -124,14 +137,14 @@ def self_assigns(tree) -> list[tuple[int, str]]:
 
 
 def extends(tree) -> str:
-    statement = next(tree.find_data("extends_stmt"), None)
-    return source_text(statement) if statement is not None else ""
+    """The base in the script's own `extends` or `class_name X extends` line; "" without one."""
+    statement = next((c for c in tree.children if is_tree(c) and c.data in EXTENDS_STATEMENTS), None)
+    return source_text(statement.children[-1]) if statement is not None else ""
 
 
 def scan(tree) -> Hits:
     """(line, message) hits by rule, for every rule in COUNTED and ADVISORY, sorted by line."""
-    found: Hits = {rule: [] for rule in (*COUNTED, *ADVISORY)}
-    hot_hits(tree, found)
+    found = hot_hits(tree)
     found["private-export"] = private_exports(tree)
     found["self-assign"] = self_assigns(tree)
     return {rule: sorted(hits) for rule, hits in found.items()}

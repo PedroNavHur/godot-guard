@@ -84,8 +84,13 @@ def is_variable(line: str) -> bool:
     return bool(re.search(r"(^|\s)var\s+\w+", line)) and not line.startswith(("func", "static func"))
 
 
+def is_export_annotation(name: str) -> bool:
+    """Whether an annotation is an `@export` of a variable: group, subgroup, and category are not."""
+    return name.startswith("export") and name not in NOT_VARIABLES
+
+
 def is_exported(annotations: list[str]) -> bool:
-    return any(a.startswith("export") and a not in NOT_VARIABLES for a in annotations)
+    return any(is_export_annotation(a) for a in annotations)
 
 
 def read_exports(surface: Surface, line: str, pending: list[str]) -> list[str]:

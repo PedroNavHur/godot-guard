@@ -6,8 +6,8 @@ import unittest
 from godot_guard import analyzer_config
 from godot_guard.check import check
 from godot_guard.config import ConfigError
-from godot_guard.godot_warnings import REQUIRED
 
+from .fixtures import HEXSTEAD_WARNINGS
 from .helpers import Repo, captured, strict_project
 
 SCRIPT = {"scripts/a.gd": "extends Node\n"}
@@ -18,6 +18,12 @@ def project(*overrides: str) -> str:
     keys = {line.split("=", 1)[0] for line in overrides}
     kept = [line for line in strict_project().splitlines() if line.split("=", 1)[0] not in keys]
     return "\n".join([*kept, *overrides]) + "\n"
+
+
+def hexstead_project(skipped: str = "") -> str:
+    """A project with hexstead's warnings each at error, except `skipped`."""
+    settings = "".join(f"gdscript/warnings/{name}=2\n" for name in HEXSTEAD_WARNINGS if name != skipped)
+    return "config_version=5\n\n[debug]\n\n" + settings
 
 
 class AnalyzerConfigTest(unittest.TestCase):
@@ -72,11 +78,30 @@ class AnalyzerConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "inferred_declaration"):
             repo.config()
 
-    def test_the_required_set_covers_hexsteads_settings(self):
-        self.assertEqual(len(REQUIRED), 47)
-        self.assertEqual(sorted(name for name, level in REQUIRED.items() if level == 2), [
-            "get_node_default_without_onready", "inference_on_variant", "native_method_override", "onready_with_export",
-        ])
+    def test_hexsteads_settings_at_error_pass(self):
+        self.assertEqual(self.problems(hexstead_project()), [])
+
+    def test_dropping_one_of_hexsteads_settings_names_it(self):
+        [problem] = self.problems(hexstead_project(skipped="unused_variable"))
+        self.assertIn("unused_variable", problem.message)
+
+    def test_default_addons_directory_rule_passes(self):
+        self.assertEqual(self.problems(project('gdscript/warnings/directory_rules={"res://addons": 0}')), [])
+        multi_line = project('gdscript/warnings/directory_rules={\n"res://addons": 0\n}')
+        self.assertEqual(self.problems(multi_line), [])
+
+    def test_a_directory_rule_turning_warnings_off_under_scripts_is_reported(self):
+        text = project('gdscript/warnings/directory_rules={\n"res://addons": 0,\n"res://scripts": 0\n}')
+        [problem] = self.problems(text)
+        self.assertEqual(problem.line, text.splitlines().index("gdscript/warnings/directory_rules={") + 1)
+        self.assertIn("res://scripts", problem.message)
+
+    def test_a_one_line_directory_rule_under_scripts_is_reported(self):
+        [problem] = self.problems(project('gdscript/warnings/directory_rules={"res://scripts": 0}'))
+        self.assertIn("res://scripts", problem.message)
+
+    def test_a_directory_rule_that_keeps_warnings_passes(self):
+        self.assertEqual(self.problems(project('gdscript/warnings/directory_rules={"res://scripts": 1}')), [])
 
 
 class CheckWiringTest(unittest.TestCase):

@@ -21,7 +21,7 @@ class PatternTest(unittest.TestCase):
         self.found = lines(fixtures.HOT_PATH)
 
     def test_lookups_in_hot_functions_but_not_in_ready_or_lambdas(self):
-        self.assertEqual(self.found["lookup-in-hot-path"], [12, 13, 14, 15, 28, 40])
+        self.assertEqual(self.found["lookup-in-hot-path"], [12, 13, 14, 15, 24, 29, 41])
 
     def test_loads_in_hot_functions(self):
         self.assertEqual(self.found["load-in-hot-path"], [16, 17])
@@ -30,7 +30,7 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(self.found["per-frame-allocation"], [18, 19])
 
     def test_exported_variables_named_private(self):
-        self.assertEqual(self.found["private-export"], [3, 6, 37])
+        self.assertEqual(self.found["private-export"], [3, 6, 38])
 
     def test_plain_self_assignment_but_not_compound(self):
         self.assertEqual(self.found["self-assign"], [21, 22])
@@ -38,10 +38,43 @@ class PatternTest(unittest.TestCase):
     def test_messages_name_the_call_and_the_function(self):
         hits = dict(patterns.scan(parse_tree(fixtures.HOT_PATH))["lookup-in-hot-path"])
         self.assertIn("$path inside _process()", hits[12])
-        self.assertIn("get_node_or_null() inside _physics_process()", hits[40])
+        self.assertIn("get_node_or_null() inside _physics_process()", hits[41])
 
     def test_runner_scripts_are_exempt_from_the_hot_path_rules(self):
         self.assertEqual(lines(fixtures.RUNNER), {rule: [] for rule in (*patterns.COUNTED, *patterns.ADVISORY)})
+
+    def test_a_runner_keeps_its_exemption_past_an_inner_class_with_another_base(self):
+        source = """\
+extends SceneTree
+
+class Helper extends RefCounted:
+	func _process(_delta: float) -> void:
+		var root := get_node("Main")
+"""
+        self.assertEqual(lines(source)["lookup-in-hot-path"], [])
+
+    def test_a_class_name_runner_is_exempt(self):
+        source = """\
+class_name Runner extends SceneTree
+
+
+func _process(_delta: float) -> void:
+	var root := get_node("Main")
+"""
+        self.assertEqual(lines(source)["lookup-in-hot-path"], [])
+
+    def test_an_inner_runner_does_not_exempt_the_script(self):
+        source = """\
+extends Node
+
+class Runner extends MainLoop:
+	pass
+
+
+func _process(_delta: float) -> void:
+	var root := get_node("Main")
+"""
+        self.assertEqual(lines(source)["lookup-in-hot-path"], [8])
 
 
 class PatternCheckTest(unittest.TestCase):
@@ -53,17 +86,17 @@ class PatternCheckTest(unittest.TestCase):
     def test_counted_rules_fail_and_allocations_only_warn(self):
         status, output = captured(check, self.config)
         self.assertEqual(status, 1)
-        self.assertEqual(output.count("(lookup-in-hot-path)"), 6)
+        self.assertEqual(output.count("(lookup-in-hot-path)"), 7)
         self.assertIn("hot.gd:18: warning: ", output)
 
     def test_counted_rules_are_baselined_per_file(self):
         captured(update_baseline, self.config, init=True)
-        self.assertEqual(load(self.config.baseline_path)["lookup-in-hot-path"], {"hot.gd": 6})
+        self.assertEqual(load(self.config.baseline_path)["lookup-in-hot-path"], {"hot.gd": 7})
         self.assertEqual(captured(check, self.config)[0], 0)
         self.repo.write("hot.gd", fixtures.HOT_PATH + "\n\nfunc _input(_e: InputEvent) -> void:\n\tvar m := $M\n")
         status, output = captured(check, self.config)
         self.assertEqual(status, 1)
-        self.assertIn("the file has 7 hot-path lookups, its baseline allows 6", output)
+        self.assertIn("the file has 8 hot-path lookups, its baseline allows 7", output)
 
     def test_an_unparsable_file_keeps_its_entries(self):
         captured(update_baseline, self.config, init=True)

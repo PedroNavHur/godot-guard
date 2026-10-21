@@ -202,6 +202,7 @@ func _process(_delta: float) -> void:
 	shown = shown
 	self.shown = self.shown
 	shown += shown
+	var m := $%Name
 
 
 func _unhandled_input(_event: InputEvent) -> void:
@@ -219,6 +220,8 @@ class Inner:
 
 	func _physics_process(_delta: float) -> void:
 		var r := self.get_node_or_null("R")
+
+@export_storage var _stored := 5
 """
 
 RUNNER = """\
@@ -230,3 +233,50 @@ func _process(_delta: float) -> bool:
 	var probes := [root]
 	return false
 """
+
+# gdscript/warnings/* names in hexstead's project.godot, which analyzer-config must cover.
+HEXSTEAD_WARNINGS = (
+    "assert_always_false",
+    "assert_always_true",
+    "confusable_capture_reassignment",
+    "confusable_identifier",
+    "confusable_local_declaration",
+    "confusable_local_usage",
+    "confusable_temporary_modification",
+    "constant_used_as_function",
+    "deprecated_keyword",
+    "empty_file",
+    "enum_variable_without_default",
+    "function_used_as_property",
+    "incompatible_ternary",
+    "int_as_enum_without_cast",
+    "int_as_enum_without_match",
+    "integer_division",
+    "missing_await",
+    "missing_tool",
+    "narrowing_conversion",
+    "property_used_as_function",
+    "redundant_await",
+    "redundant_static_unload",
+    "shadowed_global_identifier",
+    "shadowed_variable",
+    "shadowed_variable_base_class",
+    "standalone_expression",
+    "standalone_ternary",
+    "static_called_on_instance",
+    "unassigned_variable",
+    "unassigned_variable_op_assign",
+    "unreachable_code",
+    "unreachable_pattern",
+    "unsafe_call_argument",
+    "unsafe_cast",
+    "unsafe_method_access",
+    "unsafe_property_access",
+    "unsafe_void_return",
+    "untyped_declaration",
+    "unused_local_constant",
+    "unused_parameter",
+    "unused_private_class_variable",
+    "unused_signal",
+    "unused_variable",
+)
