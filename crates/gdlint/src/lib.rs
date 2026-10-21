@@ -3,6 +3,7 @@
 pub mod config;
 pub mod pyre;
 pub mod repr;
+pub mod utils;
 pub mod yaml;
 
 pub use config::{Config, ConfigError};
