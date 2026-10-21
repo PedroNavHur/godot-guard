@@ -7,6 +7,8 @@
 // Some functions wait for their callers, which a later layer of the stack adds.
 #![allow(dead_code)]
 
+mod annotation;
+mod const_statement;
 mod constants;
 mod context;
 mod dot_chain;
@@ -18,3 +20,4 @@ mod node;
 mod py;
 mod statement_utils;
 mod types;
+mod var_statement;
