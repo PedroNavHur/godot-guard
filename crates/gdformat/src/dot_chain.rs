@@ -1,10 +1,12 @@
 //! The dot-chain, subscription, and lambda parts of gdtoolkit's `expression.py`.
 
+use crate::block::format_block;
 use crate::context::{Context, ExpressionContext};
 use crate::expression::{
     format_concrete, format_operator_chain_based_expression_to_multiple_lines, tab_expanded_len,
 };
 use crate::expression_utils::{expression_contains_lambda, is_expression_forcing_multiple_lines};
+use crate::function_statement::StatementFormatter;
 use crate::node::Ex;
 use crate::py;
 use crate::types::FormattedLines;
@@ -194,9 +196,32 @@ pub(crate) fn format_lambda_to_multiple_lines<'a>(
     expression_context: &ExpressionContext,
     context: &Context<'a>,
 ) -> FormattedLines {
-    // A lambda's body is a block of statements: the statement formatter brings it.
-    let _ = (a_lambda, expression_context, context);
-    unimplemented!("multi-line lambdas need the statement formatter")
+    let expression_context_for_header = ExpressionContext::new(
+        expression_context.prefix_string.clone(),
+        expression_context.prefix_line,
+        "",
+        -1,
+    );
+    let mut header_lines =
+        format_concrete(&a_lambda.child(0), &expression_context_for_header, context);
+    let mut child_context = context.create_child_context(expression_context.prefix_line);
+    let (mut block_lines, _) = format_block(
+        &a_lambda.children_from(1),
+        StatementFormatter::Func,
+        &mut child_context,
+        crate::constants::default_surrounding_empty_lines,
+    );
+    let (last_block_line_number, last_block_line_content) =
+        block_lines.pop().expect("lambda without block lines");
+    block_lines.push((
+        last_block_line_number,
+        format!(
+            "{last_block_line_content}{}",
+            expression_context.suffix_string
+        ),
+    ));
+    header_lines.extend(block_lines);
+    header_lines
 }
 
 pub(crate) fn format_lambda_header_to_multiple_lines<'a>(

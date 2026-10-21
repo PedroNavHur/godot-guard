@@ -10,6 +10,7 @@
 mod annotation;
 mod block;
 mod class_statement;
+mod comments;
 mod const_statement;
 mod constants;
 mod context;
@@ -17,6 +18,7 @@ mod dot_chain;
 mod expression;
 mod expression_to_str;
 mod expression_utils;
+mod formatter;
 mod function_statement;
 mod function_statement_to_str;
 mod node;
@@ -25,3 +27,5 @@ mod py;
 mod statement_utils;
 mod types;
 mod var_statement;
+
+pub use formatter::format_code;
