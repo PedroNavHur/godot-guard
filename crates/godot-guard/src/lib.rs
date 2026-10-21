@@ -1,6 +1,7 @@
 //! godot-guard: guardrails for Godot 4 projects. A port of the Python package, module for module.
 
 pub mod analyzer_config;
+pub mod baseline;
 pub mod comments;
 pub mod config;
 pub mod error;
