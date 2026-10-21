@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import BASELINE_NAME, BASELINED, Config
+from .patterns import COUNTED
 from .rules import FileResult, Item, Problem
 
 LIMIT_OF = {
@@ -15,11 +16,13 @@ LIMIT_OF = {
     "interface-cap": "inputs",
 }
 TREE_RULES = ("cognitive-complexity", "cyclomatic-complexity")
+# Measured on the parse tree: a file that fails to parse has no item, so its entries are not missing.
+PARSED_RULES = (*TREE_RULES, *COUNTED)
 
 
 def limit(config: Config, rule: str) -> int:
-    """long-comment counts comments over the prose cap, so any is over."""
-    if rule == "long-comment":
+    """Counted rules (long-comment, the pattern rules) count hits, so any is over."""
+    if rule not in LIMIT_OF:
         return 0
     return config.limits[LIMIT_OF[rule]]
 
@@ -89,11 +92,11 @@ class Judge:
             suffix = f" (max {allowed})"
         else:
             suffix = f" (baseline {recorded}, max {allowed})"
-        if item.rule != "long-comment":
+        if not item.locations:
             return [Problem(item.path, item.line, item.label + suffix, item.rule, level)]
         note = ""
         if recorded is not None:
-            note = f"; the file has {item.value} long comments, its baseline allows {recorded}"
+            note = f"; the file has {item.label}, its baseline allows {recorded}"
         return [Problem(item.path, line, text + note, item.rule, level) for line, text in item.locations]
 
     def missing(self, results: list[FileResult], subset: set[str] | None) -> list[Problem]:
@@ -115,7 +118,7 @@ def in_scope(rule: str, key: str, subset: set[str] | None, unparsed: set[str]) -
     path = item_path(rule, key)
     if subset is not None and path not in subset:
         return False
-    return not (rule in TREE_RULES and path in unparsed)
+    return not (rule in PARSED_RULES and path in unparsed)
 
 
 def judge(config: Config) -> Judge:

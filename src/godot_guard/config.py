@@ -11,10 +11,15 @@ from pathlib import Path
 
 import yaml
 
+from .godot_warnings import REQUIRED
+from .patterns import ADVISORY as PATTERN_ADVISORY
+from .patterns import COUNTED
+
 CONFIG_NAME = ".godot-guard.yml"
 BASELINE_NAME = ".godot-guard-baseline.json"
 LEVELS = ("error", "warn", "off")
-BASELINED = ("cognitive-complexity", "cyclomatic-complexity", "long-comment", "interface-cap")
+BASELINED = ("cognitive-complexity", "cyclomatic-complexity", "long-comment", "interface-cap", *COUNTED)
+ADVISORY = ("nested-ternary", *PATTERN_ADVISORY)
 DEFAULTS = {
     "paths": ["."],
     "exclude": ["addons/**", ".godot/**"],
@@ -25,7 +30,14 @@ DEFAULTS = {
         "long-comment": "error",
         "interface-cap": "error",
         "nested-ternary": "warn",
+        "analyzer-config": "error",
+        "lookup-in-hot-path": "error",
+        "load-in-hot-path": "error",
+        "private-export": "error",
+        "self-assign": "error",
+        "per-frame-allocation": "warn",
     },
+    "relaxed-warnings": [],
     "boundaries": [],
     "gate": {
         "format": True,
@@ -85,6 +97,7 @@ class Config:
     limits: dict = field(default_factory=lambda: dict(DEFAULTS["limits"]))
     rules: dict = field(default_factory=lambda: dict(DEFAULTS["rules"]))
     boundaries: list = field(default_factory=list)
+    relaxed_warnings: list[str] = field(default_factory=list)
     gate: dict = field(default_factory=lambda: copy.deepcopy(DEFAULTS["gate"]))
 
     @property
@@ -174,6 +187,7 @@ def apply(config: Config, data) -> None:
     entries = given(data, "boundaries", [])
     expect(isinstance(entries, list), "boundaries must be a list")
     config.boundaries = [boundary(entry) for entry in entries]
+    config.relaxed_warnings = relaxed(given(data, "relaxed-warnings", []))
     validate(config)
 
 
@@ -255,12 +269,21 @@ def boundary(entry) -> dict:
     }
 
 
+def relaxed(value) -> list[str]:
+    """`relaxed-warnings`: names from godot_warnings.REQUIRED that project.godot may keep below error."""
+    names = string_list(value, "relaxed-warnings")
+    for name in names:
+        expect(name in REQUIRED, f"relaxed-warnings: {name!r} is not a warning analyzer-config requires")
+    return names
+
+
 def validate(config: Config) -> None:
     for key, value in config.limits.items():
         expect(isinstance(value, int) and not isinstance(value, bool) and value >= 0, f"limits.{key} must be a whole number")
     for rule, level in config.rules.items():
         expect(level in LEVELS, f"rules.{rule} must be one of {', '.join(LEVELS)}")
-    expect(config.rules["nested-ternary"] != "error", "rules.nested-ternary is advisory: use warn or off")
+    for rule in ADVISORY:
+        expect(config.rules[rule] != "error", f"rules.{rule} is advisory: use warn or off")
     gate = config.gate
     for key in ("format", "lint", "import", "analyzer"):
         expect(isinstance(gate[key], bool), f"gate.{key} must be true or false")

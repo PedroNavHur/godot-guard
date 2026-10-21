@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import baseline
+from . import analyzer_config, baseline
 from .config import BASELINE_NAME, Config, hidden, matches, walk_scripts
 from .rules import FileResult, Problem, Surfaces, analyze
 from .tools import Echo, write_line
@@ -75,13 +75,15 @@ def problems_of(config: Config, results: list[FileResult], subset: set[str] | No
 
 def check(config: Config, files: list[str] | None = None, surfaces: Surfaces | None = None,
           as_json: bool = False, echo: Echo | None = None) -> int:
-    """Run the rules on `files` (every scanned script when None); 1 on any error.
+    """Run the rules on `files` (every scanned script and project.godot when None); 1 on any error.
 
     `surfaces` is the Resource map, read from the root's scripts when None. Output goes to `echo`, or stdout.
     """
     paths = config.scanned_files() if files is None else select(config, files)
     subset = None if files is None else set(paths)
     problems = problems_of(config, measure(config, paths, surfaces), subset)
+    if files is None:
+        problems += analyzer_config.problems(config)
     problems.sort(key=lambda p: (p.path, p.line, p.rule))
     if as_json:
         write_line(echo, json.dumps(report(config, paths, problems), indent=2))

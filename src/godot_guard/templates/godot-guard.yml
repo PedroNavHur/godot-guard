@@ -12,6 +12,13 @@ rules:
   long-comment: error
   interface-cap: error
   nested-ternary: warn
+  analyzer-config: error
+  lookup-in-hot-path: error
+  load-in-hot-path: error
+  private-export: error
+  self-assign: error
+  per-frame-allocation: warn
+relaxed-warnings: []
 boundaries: []
 gate:
   format: true

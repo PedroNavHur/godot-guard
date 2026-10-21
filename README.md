@@ -10,11 +10,15 @@ tsc, Husky, and CI, with a ratchet baseline so existing code can adopt them.
 | oxfmt / `format:check` | `gdformat --check` | gdtoolkit |
 | oxlint core rules | `gdlint` with `.gdlintrc` | gdtoolkit |
 | `tsc` strict, `no-unsafe-*` | analyzer warnings set to error in `project.godot`, every script loaded headless | Godot |
+| `strict: true` in tsconfig | `analyzer-config`: `project.godot` keeps those warnings at error | godot-guard |
 | `complexity` 16, `cognitive-complexity` 8 | `cyclomatic-complexity`, `cognitive-complexity` | godot-guard |
 | `max-lines` | none: fleet's `file-size` check caps every file at 20,000 bytes, in any language | fleet |
 | `no-long-comment` | `long-comment` | godot-guard |
 | prop cap | `interface-cap`: `@export`s, signals, `_init`/`setup`/`configure` parameters | godot-guard |
 | `no-nested-ternary` (advisory) | `nested-ternary` (warning, never fails) | godot-guard |
+| pedro-best-practices `godot/lookup-in-hot-path`, `godot/load-in-hot-path` | `lookup-in-hot-path`, `load-in-hot-path` | godot-guard |
+| pedro-best-practices `godot/per-frame-allocation` (advisory) | `per-frame-allocation` (warning, never fails) | godot-guard |
+| `no-self-assign` | `self-assign`; `private-export` for an `@export` named `_private` | godot-guard |
 | import-boundary rules | `boundary`: forbidden patterns per directory | godot-guard |
 | vitest | the repository's headless test scripts | repository |
 | Husky + lint-staged | `.githooks/` via `core.hooksPath` | godot-guard templates |
@@ -148,6 +152,13 @@ rules:          # error, warn, or off
   long-comment: error
   interface-cap: error
   nested-ternary: warn
+  analyzer-config: error
+  lookup-in-hot-path: error
+  load-in-hot-path: error
+  private-export: error
+  self-assign: error
+  per-frame-allocation: warn  # advisory: warn or off
+relaxed-warnings: []  # analyzer warnings project.godot may keep below error
 boundaries:
   - name: simulation-domain
     paths: [scripts/simulation/**]
@@ -181,7 +192,7 @@ adopts godot-guard; it may only shrink.
    reviewed like any other change.
 
 Keys are the repo-relative path for file rules (`long-comment`,
-`interface-cap`) and `path::name` for the complexity rules, where the name is
+`interface-cap`, and the counted pattern rules) and `path::name` for the complexity rules, where the name is
 qualified with `.`: `Inner.method`, `speed.set`, and `outer.<lambda#2>` for the
 second anonymous lambda in `outer`. A name repeated in one file is numbered on
 every occurrence (`f#1`, `f#2`).
@@ -192,7 +203,8 @@ the old entry as stale and the lambda as a new violation. Fix it by refactoring
 the lambda below the limit, or by renaming the entry's key in the baseline by
 hand.
 
-Boundary hits and nested ternaries are never baselined.
+Boundary hits, nested ternaries, `per-frame-allocation`, and `analyzer-config`
+are never baselined.
 
 ## Development
 
