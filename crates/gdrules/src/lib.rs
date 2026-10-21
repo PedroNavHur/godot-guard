@@ -4,3 +4,4 @@
 
 pub mod complexity;
 pub mod interface;
+pub mod patterns;
