@@ -6,6 +6,7 @@ import unittest
 from godot_guard import analyzer_config
 from godot_guard.check import check
 from godot_guard.config import ConfigError
+from godot_guard.godot_warnings import ERROR, REQUIRED
 
 from .fixtures import HEXSTEAD_WARNINGS
 from .helpers import Repo, captured, strict_project
@@ -82,8 +83,12 @@ class AnalyzerConfigTest(unittest.TestCase):
         self.assertEqual(self.problems(hexstead_project()), [])
 
     def test_dropping_one_of_hexsteads_settings_names_it(self):
-        [problem] = self.problems(hexstead_project(skipped="unused_variable"))
-        self.assertIn("unused_variable", problem.message)
+        """Dropping a name Godot defaults below error reports it; names that default to error are skipped."""
+        below_error = [name for name in HEXSTEAD_WARNINGS if REQUIRED[name] < ERROR]
+        for name in below_error:
+            with self.subTest(name=name):
+                [problem] = self.problems(hexstead_project(skipped=name))
+                self.assertIn(name, problem.message)
 
     def test_default_addons_directory_rule_passes(self):
         self.assertEqual(self.problems(project('gdscript/warnings/directory_rules={"res://addons": 0}')), [])
@@ -99,6 +104,8 @@ class AnalyzerConfigTest(unittest.TestCase):
     def test_a_one_line_directory_rule_under_scripts_is_reported(self):
         [problem] = self.problems(project('gdscript/warnings/directory_rules={"res://scripts": 0}'))
         self.assertIn("res://scripts", problem.message)
+        [spaced] = self.problems(project('gdscript/warnings/directory_rules = {"res://scripts": 0}'))
+        self.assertIn("res://scripts", spaced.message)
 
     def test_a_directory_rule_that_keeps_warnings_passes(self):
         self.assertEqual(self.problems(project('gdscript/warnings/directory_rules={"res://scripts": 1}')), [])

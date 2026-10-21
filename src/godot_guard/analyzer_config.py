@@ -17,7 +17,7 @@ PROJECT = "project.godot"
 RULE = "analyzer-config"
 SECTION = re.compile(r"\[([^\]]+)\]\s*$")
 WARNING = re.compile(r"gdscript/warnings/(\w+)\s*=\s*(.*?)\s*$")
-DIRECTORY_RULES = re.compile(r"gdscript/warnings/directory_rules=\{([^}]*)\}")
+DIRECTORY_RULES = re.compile(r"gdscript/warnings/directory_rules\s*=\s*\{([^}]*)\}")
 DIRECTORY_ENTRY = re.compile(r'"res://([^"]*)"\s*:\s*(\d+)')
 
 

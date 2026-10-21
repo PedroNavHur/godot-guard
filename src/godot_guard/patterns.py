@@ -62,14 +62,14 @@ def hot_hit(node, function: str) -> tuple[str, str] | None:
 
 
 def subtrees(node) -> list:
-    """The child subtrees of `node`; a `$%name` is one lookup, so its path child is skipped."""
+    """The child subtrees of `node`; none for a `$` path, so `$%name` counts as one lookup."""
     if node.data == "get_node":
         return []
     return [child for child in node.children if is_tree(child)]
 
 
 def body_nodes(node):
-    """Every subtree below `node`, without descending into lambdas."""
+    """Every subtree below `node`, without descending into lambdas or `$` paths."""
     pending = subtrees(node)
     while pending:
         current = pending.pop()
