@@ -15,7 +15,10 @@ mod basic_checks;
 mod class_checks;
 pub mod config;
 mod design_checks;
+mod format_checks;
 mod helpers;
+mod if_return_checks;
+mod misc_checks;
 mod name_checks;
 mod problem;
 pub mod pyre;
@@ -42,9 +45,11 @@ pub fn lint_code(gdscript_code: &str, parse_tree: &Tree, config: &Config) -> Vec
     let subtrees = utils::iter_subtrees(parse_tree);
     let ast = ast::AbstractSyntaxTree::new(parse_tree);
     let mut problems = design_checks::lint(&ast, config);
+    problems.extend(format_checks::lint(gdscript_code, config));
     problems.extend(name_checks::lint(&subtrees, config));
     problems.extend(class_checks::lint(&ast, config));
     problems.extend(basic_checks::lint(&subtrees, config));
+    problems.extend(misc_checks::lint(&subtrees, config));
 
     let inactive = fetch_problem_inactivity_lines(gdscript_code);
     problems.retain(|problem| {
