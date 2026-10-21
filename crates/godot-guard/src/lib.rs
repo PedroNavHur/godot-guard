@@ -4,6 +4,7 @@ pub mod analyzer_config;
 pub mod argparse;
 pub mod baseline;
 pub mod check;
+pub mod cli;
 pub mod comments;
 pub mod config;
 pub mod error;

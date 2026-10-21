@@ -1,0 +1,7 @@
+usage: godot-guard run [-h] ...
+
+positional arguments:
+  args
+
+optional arguments:
+  -h, --help  show this help message and exit

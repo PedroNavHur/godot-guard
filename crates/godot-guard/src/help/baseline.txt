@@ -1,0 +1,6 @@
+usage: godot-guard baseline [-h] [--init] [--force]
+
+optional arguments:
+  -h, --help  show this help message and exit
+  --init      record every current violation
+  --force     let --init overwrite the baseline
