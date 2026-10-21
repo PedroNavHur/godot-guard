@@ -17,6 +17,7 @@ pub mod parse;
 pub mod py;
 pub mod rules;
 pub mod scaffold;
+pub mod schedule;
 pub mod scripts;
 pub mod settings;
 pub mod tools;
