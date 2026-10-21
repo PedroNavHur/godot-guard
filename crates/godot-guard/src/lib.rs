@@ -4,3 +4,4 @@ pub mod error;
 pub mod fnmatch;
 pub mod json;
 pub mod py;
+pub mod yaml;
