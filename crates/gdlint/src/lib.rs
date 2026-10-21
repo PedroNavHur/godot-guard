@@ -1,5 +1,6 @@
 //! gdlint: the same problems as gdtoolkit 4.5.0's linter.
 
+pub mod ast;
 pub mod config;
 pub mod pyre;
 pub mod repr;
