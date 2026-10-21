@@ -11,9 +11,11 @@ use gdscript::Tree;
 use regex::Regex;
 
 pub mod ast;
+mod class_checks;
 pub mod config;
 mod design_checks;
 mod helpers;
+mod name_checks;
 mod problem;
 pub mod pyre;
 pub mod repr;
@@ -36,8 +38,11 @@ pub fn read_source(
 
 /// `lint_code`: the problems in `gdscript_code`, whose parse tree is `parse_tree`, in gdlint's order.
 pub fn lint_code(gdscript_code: &str, parse_tree: &Tree, config: &Config) -> Vec<Problem> {
+    let subtrees = utils::iter_subtrees(parse_tree);
     let ast = ast::AbstractSyntaxTree::new(parse_tree);
     let mut problems = design_checks::lint(&ast, config);
+    problems.extend(name_checks::lint(&subtrees, config));
+    problems.extend(class_checks::lint(&ast, config));
 
     let inactive = fetch_problem_inactivity_lines(gdscript_code);
     problems.retain(|problem| {
