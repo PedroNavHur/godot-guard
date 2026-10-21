@@ -4,9 +4,6 @@
 //! `gdscript` parses; `node` adds the fake trees gdtoolkit builds while formatting, and `py` the Python
 //! string semantics the output depends on.
 
-// Some functions wait for their callers, which a later layer of the stack adds.
-#![allow(dead_code)]
-
 mod annotation;
 mod block;
 mod class_statement;
@@ -24,8 +21,10 @@ mod function_statement_to_str;
 mod node;
 mod property;
 mod py;
+mod safety_checks;
 mod statement_utils;
 mod types;
 mod var_statement;
 
 pub use formatter::format_code;
+pub use safety_checks::{ParsedCode, SafetyError, SafetyViolation, check_formatting_safety};
