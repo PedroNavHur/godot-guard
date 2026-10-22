@@ -7,7 +7,13 @@ use gdformat::cli::{Io, run};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let cwd = std::env::current_dir().expect("working directory");
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(error) => {
+            eprintln!("gdformat: cannot read the working directory: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let (mut stdin, mut stdout, mut stderr) = (io::stdin(), io::stdout(), io::stderr());
     let mut io = Io {
         stdin: &mut stdin,

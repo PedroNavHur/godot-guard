@@ -47,7 +47,7 @@ fn scandir(top: &str, cwd: &Path) -> Option<(Vec<String>, Vec<String>)> {
     let mut gd_files = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        // `DirEntry.is_dir()` follows symlinks, as `os.scandir`'s does.
+        // `Path::is_dir` follows symlinks, as Python's `DirEntry.is_dir()` does.
         if entry.path().is_dir() {
             dirnames.push(name);
         } else if name.ends_with(".gd") {
