@@ -46,7 +46,17 @@ produces them after inlining and aliasing, spans as lark reports them. Ports
 of gdtoolkit's consumers read it the way the Python reads lark's tree. Until
 the parser lands, consumers load the oracle's trees with the `oracle` feature.
 
-Allowed deviation: the text of a parse-error message. The line must match.
+Allowed deviations:
+
+- The text of a parse-error message. The line must match.
+- On a closed stdout the port's tools exit 1. Python's status is 120 or 1,
+  depending on whether its output buffer fills before the interpreter shuts
+  down, an artifact of CPython's stdout buffering and not gdtoolkit behavior.
+- `init` scaffolds an install of the release binary in `quality.yml` and no
+  longer writes a `godot-guard @ git+...` line to `tools/requirements-lint.txt`;
+  0.4.0 scaffolds the pip requirement. The port's `quality.yml` is
+  `crates/godot-guard/templates/quality.yml`; the Python package's templates
+  still serve 0.4.0.
 
 Config files (`.gdlintrc`, `gdformatrc`) are read by one PyYAML 1.1 port in
 `gdlint::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's
@@ -71,6 +81,14 @@ Dump oracle trees with
 Parity tests that need the corpus read its location from `GG_CORPUS` and skip
 when it is unset, so CI stays self-contained; commit small fixtures for the
 cases a parity run found.
+
+## Releasing
+
+Push a tag `v<version>`, where the version is `Cargo.toml`'s workspace version
+(the scaffolded `quality.yml` downloads that tag's binary). The `Release`
+workflow builds `godot-guard` for `x86_64-unknown-linux-gnu` and
+`aarch64-apple-darwin`, and attaches `godot-guard-<target>.tar.gz`, holding the
+single binary (gdformat and gdlint run inside it), to the tag's GitHub release.
 
 ## Working rules
 

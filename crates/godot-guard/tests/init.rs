@@ -9,7 +9,7 @@ use std::process::Command;
 
 use common::Repo;
 use godot_guard::config::TestScript;
-use godot_guard::scaffold::{REQUIREMENT, TEMPLATES};
+use godot_guard::scaffold::TEMPLATES;
 
 fn init_repo() -> Repo {
     let repo = Repo::new(
@@ -57,7 +57,12 @@ fn scaffolds_everything_once() {
     assert!(read(root, ".github/workflows/quality.yml").contains("version: 4.7.1"));
     assert_eq!(
         read(root, "tools/requirements-lint.txt"),
-        format!("gdtoolkit==4.5.0\n{REQUIREMENT}\n")
+        "gdtoolkit==4.5.0\n"
+    );
+    assert!(!run.stdout.contains("requirements-lint"), "{run:?}");
+    assert!(
+        run.stdout.contains("wrote .github/workflows/quality.yml"),
+        "{run:?}"
     );
     let hooks = Command::new("git")
         .args(["config", "core.hooksPath"])
@@ -71,7 +76,39 @@ fn scaffolds_everything_once() {
         "{run:?}"
     );
     let again = repo.run(&["init"]);
-    assert_eq!(again.stdout.matches("skipped").count(), 5, "{again:?}");
+    assert_eq!(again.stdout.matches("skipped").count(), 4, "{again:?}");
+}
+
+#[test]
+fn ci_installs_the_release_binary_without_python() {
+    let repo = init_repo();
+    assert_eq!(repo.run(&["init"]).status, 0);
+    let workflow = read(&repo.root, ".github/workflows/quality.yml");
+    let url = format!(
+        "https://github.com/PedroNavHur/godot-guard/releases/download/v{}/godot-guard-x86_64-unknown-linux-gnu.tar.gz",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(workflow.contains(&url), "{workflow}");
+    assert!(workflow.contains("run: godot-guard gate"), "{workflow}");
+    assert!(!workflow.contains("pip"), "{workflow}");
+    assert!(!workflow.contains("python"), "{workflow}");
+    assert!(!workflow.contains("{version}"), "{workflow}");
+    assert!(!workflow.contains("{godot_version}"), "{workflow}");
+}
+
+#[test]
+fn init_without_a_requirements_file_writes_none() {
+    let repo = Repo::new(&[], None);
+    assert!(
+        Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo.root)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert_eq!(repo.run(&["init"]).status, 0);
+    assert!(!repo.root.join("tools").exists());
 }
 
 #[test]

@@ -1,6 +1,7 @@
-//! `godot-guard init`: scaffold the config, hooks, CI workflow, and requirement line.
+//! `godot-guard init`: scaffold the config, hooks, and CI workflow.
 //!
-//! The templates are the Python package's own files, embedded at build time.
+//! The templates are embedded at build time: the Python package's own files, except `quality.yml`, which
+//! installs the release binary where the Python package's installs the package with pip.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -12,7 +13,6 @@ use regex::Regex;
 
 use crate::config::CONFIG_NAME;
 use crate::error::{Failure, Result};
-use crate::py;
 
 pub const TEMPLATES: [(&str, &str); 4] = [
     (
@@ -27,17 +27,9 @@ pub const TEMPLATES: [(&str, &str); 4] = [
         "pre-push",
         include_str!("../../../src/godot_guard/templates/pre-push"),
     ),
-    (
-        "quality.yml",
-        include_str!("../../../src/godot_guard/templates/quality.yml"),
-    ),
+    ("quality.yml", include_str!("../templates/quality.yml")),
 ];
 const FALLBACK_GODOT: &str = "4.7.1";
-/// The requirement line names this crate's version where 0.4.0 names the Python package's.
-pub const REQUIREMENT: &str = concat!(
-    "godot-guard @ git+https://github.com/PedroNavHur/godot-guard@v",
-    env!("CARGO_PKG_VERSION")
-);
 
 static FEATURES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"config/features=PackedStringArray\("(\d+\.\d+(?:\.\d+)?)""#)
@@ -85,7 +77,13 @@ fn planned(root: &Path) -> Result<Vec<(&'static str, String)>> {
         (".githooks/pre-push", template("pre-push", &[])),
         (
             ".github/workflows/quality.yml",
-            template("quality.yml", &[("godot_version", &godot_version(root)?)]),
+            template(
+                "quality.yml",
+                &[
+                    ("godot_version", &godot_version(root)?),
+                    ("version", env!("CARGO_PKG_VERSION")),
+                ],
+            ),
         ),
     ])
 }
@@ -106,34 +104,10 @@ fn write_new(root: &Path, relative: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-fn add_requirement(root: &Path) -> Result<()> {
-    let path = root.join("tools/requirements-lint.txt");
-    let failed = |e: std::io::Error| Failure::crash(path.display(), e);
-    let text = if path.is_file() {
-        py::translate_newlines(&fs::read_to_string(&path).map_err(failed)?)
-    } else {
-        String::new()
-    };
-    let mut lines = py::splitlines(&text);
-    if lines
-        .iter()
-        .any(|line| py::strip(line).starts_with("godot-guard"))
-    {
-        println!("skipped tools/requirements-lint.txt: already requires godot-guard");
-        return Ok(());
-    }
-    fs::create_dir_all(path.parent().expect("a file below the root")).map_err(failed)?;
-    lines.push(REQUIREMENT);
-    fs::write(&path, lines.join("\n") + "\n").map_err(failed)?;
-    println!("added `{REQUIREMENT}` to tools/requirements-lint.txt");
-    Ok(())
-}
-
 pub fn init(root: &Path) -> Result<i32> {
     for (relative, text) in planned(root)? {
         write_new(root, relative, &text)?;
     }
-    add_requirement(root)?;
     let hooks = Command::new("git")
         .args(["config", "core.hooksPath", ".githooks"])
         .current_dir(root)
