@@ -219,7 +219,6 @@ fn repeat(chars: &[char], i: usize) -> Result<Option<(String, usize)>, String> {
     let Some((low, high)) = repeat_bounds(&body) else {
         return Ok(None);
     };
-    let low = if low.is_empty() { "0" } else { low };
     check_bounds(low, high)?;
     let text = match high {
         None => format!("{{{low}}}"),
@@ -228,7 +227,8 @@ fn repeat(chars: &[char], i: usize) -> Result<Option<(String, usize)>, String> {
     Ok(Some((text, close + 1)))
 }
 
-/// The bounds inside `{...}`; None when Python reads the `{` as a literal because they are not numbers.
+/// The bounds inside `{...}`, an empty minimum read as 0; None when Python reads the `{` as a literal
+/// because they are not numbers.
 fn repeat_bounds(body: &str) -> Option<(&str, Option<&str>)> {
     let (low, high) = match body.split_once(',') {
         Some((low, high)) => (low, Some(high)),
@@ -238,10 +238,10 @@ fn repeat_bounds(body: &str) -> Option<(&str, Option<&str>)> {
     if !is_number(low) || !high.is_none_or(is_number) || (high.is_none() && low.is_empty()) {
         return None;
     }
-    Some((low, high))
+    Some((if low.is_empty() { "0" } else { low }, high))
 }
 
-/// Python's `min repeat greater than max repeat` error for bounds that `repeat_bounds` accepted.
+/// Python's `min repeat greater than max repeat` error; `low` is a number, as `repeat_bounds` returns it.
 fn check_bounds(low: &str, high: Option<&str>) -> Result<(), String> {
     let Some(high) = high.filter(|h| !h.is_empty()) else {
         return Ok(());

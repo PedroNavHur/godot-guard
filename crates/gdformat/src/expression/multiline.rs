@@ -1,5 +1,5 @@
-//! The multi-line half of gdtoolkit's `expression.py`: `_format_foldable_to_multiple_lines` and the
-//! handlers its `handlers` dict names.
+//! `_format_foldable_to_multiple_lines` from gdtoolkit's `expression.py` and its handlers, except the list
+//! and key/value ones (`lists`) and the dot-chain, subscription, and lambda ones (`crate::dot_chain`).
 
 use super::lists::{
     format_args_to_multiple_lines, format_array_to_multiple_lines, format_comma_separated_list,

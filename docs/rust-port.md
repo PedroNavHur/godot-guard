@@ -49,8 +49,10 @@ the parser lands, consumers load the oracle's trees with the `oracle` feature.
 Allowed deviation: the text of a parse-error message. The line must match.
 
 Config files (`.gdlintrc`, `gdformatrc`) are read by one PyYAML 1.1 port in
-`gdlint::yaml`, which refuses merge keys (`<<`) and explicit tags where PyYAML
-accepts them; no config in the corpus uses either.
+`gdlint::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's
+`yaml.Loader` adds beyond str, int, float, bool, null, map, seq and set
+(`!!binary`, `!!timestamp`, `!!omap`, `!!pairs`, `!!python/...`); no config in
+the corpus uses them (hexstead's `.gdlintrc` uses `!!set`, which loads).
 
 ## Oracle and corpus
 

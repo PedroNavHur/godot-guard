@@ -1,4 +1,5 @@
-//! `.gdlintrc` loading: `yaml.load(text, Loader=yaml.Loader)` as PyYAML 6 does it, for the values a config holds.
+//! Config loading for gdlint (`.gdlintrc`) and gdformat (`gdformatrc`): `yaml.load(text, Loader=yaml.Loader)`
+//! as PyYAML 6 does it, for the values a config holds.
 //!
 //! saphyr-parser reads the syntax; this module builds the values with PyYAML's YAML 1.1 rules, which differ
 //! from YAML 1.2's: `yes`/`on` are booleans, `017` is octal, `1_000` and `1:30` are integers, and `!!set` makes
