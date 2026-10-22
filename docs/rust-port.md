@@ -1,10 +1,11 @@
 # Rust port
 
-godot-guard is being rebuilt in Rust, together with the Python it runs on:
+godot-guard is rebuilt in Rust, together with the Python it ran on:
 gdtoolkit's parser (lark), gdformat, and gdlint. The approach follows
 TypeScript's native port: a faithful port, file for file, that keeps
-behavior and output, not a redesign. The Python package stays the oracle until
-the switch-over, which is Pedro's decision (hexstead pins godot-guard v0.4.0).
+behavior and output, not a redesign. The Rust build is godot-guard from 0.5.0;
+the Python package in `src/` stays as 0.4.0 and the parity oracle (hexstead
+pins v0.4.0 until it moves).
 
 ## Goal
 
