@@ -3,10 +3,8 @@
 //! An `UnexpectedToken` prints lark's `get_context` above the exception; one lark gave no position prints the
 //! exception alone, stripped, as `lark_unexpected_token_to_str` falls back to. `UnexpectedCharacters` prints
 //! its message and context, stripped; a `DedentError`, its message.
-// ceiling: lark lists the expected terminals from a hash-ordered set, so Python's own order changes from run
-// to run, and it names them through the interactive parser's `accepts`, which the parser does not expose;
-// this lists the parser's expected terminals in its order. lark's "Previous tokens" line needs the token
-// before the error, which ParseError does not carry, so it is left out. Both stay out of parity's comparison.
+// ceiling: expected terminals are the parser's, in its order (lark's `accepts` is hidden, its order varies);
+// "Previous tokens" is left out, as ParseError holds no earlier token. Parity compares neither.
 
 use gdscript::{ErrorKind, ParseError};
 

@@ -123,21 +123,8 @@ impl Builder {
             None => self.root = Some(value),
             Some(Frame::List(_, items)) => items.push(value),
             Some(Frame::Dict(_, _, pairs, pending)) => match pending.take() {
-                None => {
-                    if let Value::Str(key) = &value
-                        && key == "<<"
-                    {
-                        return error("merge keys (<<) are not supported in a gdlint config");
-                    }
-                    if matches!(value, Value::List(_) | Value::Dict(_) | Value::Set(_)) {
-                        return error("found unhashable key");
-                    }
-                    *pending = Some(value);
-                }
-                Some(key) => match pairs.iter_mut().find(|(k, _)| *k == key) {
-                    Some(pair) => pair.1 = value,
-                    None => pairs.push((key, value)),
-                },
+                None => *pending = Some(mapping_key(value)?),
+                Some(key) => insert_pair(pairs, key, value),
             },
         }
         Ok(())
@@ -146,6 +133,25 @@ impl Builder {
     fn finish(&mut self) -> Result<Value, YamlError> {
         self.anchors.clear();
         Ok(self.root.take().unwrap_or(Value::Null))
+    }
+}
+
+/// `value` as a mapping key; merge keys and unhashable values are refused.
+fn mapping_key(value: Value) -> Result<Value, YamlError> {
+    if value == Value::Str("<<".into()) {
+        return error("merge keys (<<) are not supported in a gdlint config");
+    }
+    if matches!(value, Value::List(_) | Value::Dict(_) | Value::Set(_)) {
+        return error("found unhashable key");
+    }
+    Ok(value)
+}
+
+/// PyYAML's repeated-key rule: the key keeps its first position and takes the last value.
+fn insert_pair(pairs: &mut Vec<(Value, Value)>, key: Value, value: Value) {
+    match pairs.iter_mut().find(|(k, _)| *k == key) {
+        Some(pair) => pair.1 = value,
+        None => pairs.push((key, value)),
     }
 }
 

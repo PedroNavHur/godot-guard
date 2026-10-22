@@ -157,74 +157,23 @@ impl Config {
         for (key, value) in default_entries() {
             entries.entry(key.to_owned()).or_insert(value);
         }
-        let disable = match &entries["disable"] {
-            Value::List(items) | Value::Set(items) => Disable::Names(strings(items)),
-            Value::Dict(pairs) => Disable::Names(strings(pairs.iter().map(|(k, _)| k))),
-            Value::Str(text) => Disable::Text(text.clone()),
-            other => return Err(type_error("disable", "a list of check names", other)),
-        };
-        let mut config = Config {
+        let disable = disable(&entries)?;
+        let excluded_directories = excluded_directories(&entries["excluded_directories"])?;
+        let name_patterns = name_patterns(&entries, &disable)?;
+        let ints = int_settings(&entries, &disable)?;
+        let class_definitions_order = class_definitions_order(&entries, &disable)?;
+        Ok(Config {
             disable,
-            name_patterns: HashMap::new(),
-            ints: HashMap::new(),
-            class_definitions_order: Vec::new(),
-            excluded_directories: excluded_directories(&entries["excluded_directories"])?,
-        };
-        for check in NAME_CHECKS {
-            if !config.is_enabled(check) {
-                continue;
-            }
-            let Value::Str(pattern) = &entries[check] else {
-                return Err(type_error(check, "a regular expression", &entries[check]));
-            };
-            let compiled =
-                FullMatch::new(pattern).map_err(|e| ConfigError(format!("{check}: {e}")))?;
-            config.name_patterns.insert(check, compiled);
-        }
-        let int_settings: [(&str, &[&'static str]); 5] = [
-            ("max-returns", &["max-returns"]),
-            ("max-public-methods", &["max-public-methods"]),
-            ("function-arguments-number", &["function-arguments-number"]),
-            ("max-file-lines", &["max-file-lines"]),
-            ("max-line-length", &["max-line-length", "tab-characters"]),
-        ];
-        for (check, keys) in int_settings {
-            if !config.is_enabled(check) {
-                continue;
-            }
-            for &key in keys {
-                let Value::Int(number) = entries[key] else {
-                    return Err(type_error(key, "an integer", &entries[key]));
-                };
-                config.ints.insert(key, number);
-            }
-        }
-        if config.is_enabled("class-definitions-order") {
-            let order = &entries["class-definitions-order"];
-            match order {
-                Value::List(items)
-                    if !items.is_empty() && items.iter().all(|i| matches!(i, Value::Str(_))) =>
-                {
-                    config.class_definitions_order = strings(items);
-                }
-                other => {
-                    return Err(type_error(
-                        "class-definitions-order",
-                        "a non-empty list of sections",
-                        other,
-                    ));
-                }
-            }
-        }
-        Ok(config)
+            name_patterns,
+            ints,
+            class_definitions_order,
+            excluded_directories,
+        })
     }
 
     /// Whether `check` runs: `check not in config["disable"]`.
     pub fn is_enabled(&self, check: &str) -> bool {
-        match &self.disable {
-            Disable::Names(names) => !names.iter().any(|name| name == check),
-            Disable::Text(text) => !text.contains(check),
-        }
+        self.disable.enables(check)
     }
 
     /// The pattern of an enabled name check.
@@ -239,6 +188,91 @@ impl Config {
 
     pub fn class_definitions_order(&self) -> &[String] {
         &self.class_definitions_order
+    }
+}
+
+impl Disable {
+    /// `check not in config["disable"]`.
+    fn enables(&self, check: &str) -> bool {
+        match self {
+            Disable::Names(names) => !names.iter().any(|name| name == check),
+            Disable::Text(text) => !text.contains(check),
+        }
+    }
+}
+
+/// The int settings each check reads, by check.
+const INT_SETTINGS: [(&str, &[&str]); 5] = [
+    ("max-returns", &["max-returns"]),
+    ("max-public-methods", &["max-public-methods"]),
+    ("function-arguments-number", &["function-arguments-number"]),
+    ("max-file-lines", &["max-file-lines"]),
+    ("max-line-length", &["max-line-length", "tab-characters"]),
+];
+
+fn disable(entries: &HashMap<String, Value>) -> Result<Disable, ConfigError> {
+    match &entries["disable"] {
+        Value::List(items) | Value::Set(items) => Ok(Disable::Names(strings(items))),
+        Value::Dict(pairs) => Ok(Disable::Names(strings(pairs.iter().map(|(k, _)| k)))),
+        Value::Str(text) => Ok(Disable::Text(text.clone())),
+        other => Err(type_error("disable", "a list of check names", other)),
+    }
+}
+
+fn name_patterns(
+    entries: &HashMap<String, Value>,
+    disable: &Disable,
+) -> Result<HashMap<&'static str, FullMatch>, ConfigError> {
+    let mut name_patterns = HashMap::new();
+    for check in NAME_CHECKS
+        .into_iter()
+        .filter(|check| disable.enables(check))
+    {
+        let Value::Str(pattern) = &entries[check] else {
+            return Err(type_error(check, "a regular expression", &entries[check]));
+        };
+        let compiled = FullMatch::new(pattern).map_err(|e| ConfigError(format!("{check}: {e}")))?;
+        name_patterns.insert(check, compiled);
+    }
+    Ok(name_patterns)
+}
+
+fn int_settings(
+    entries: &HashMap<String, Value>,
+    disable: &Disable,
+) -> Result<HashMap<&'static str, i64>, ConfigError> {
+    let mut ints = HashMap::new();
+    let keys = INT_SETTINGS
+        .into_iter()
+        .filter(|(check, _)| disable.enables(check))
+        .flat_map(|(_, keys)| keys);
+    for &key in keys {
+        let Value::Int(number) = entries[key] else {
+            return Err(type_error(key, "an integer", &entries[key]));
+        };
+        ints.insert(key, number);
+    }
+    Ok(ints)
+}
+
+fn class_definitions_order(
+    entries: &HashMap<String, Value>,
+    disable: &Disable,
+) -> Result<Vec<String>, ConfigError> {
+    if !disable.enables("class-definitions-order") {
+        return Ok(Vec::new());
+    }
+    match &entries["class-definitions-order"] {
+        Value::List(items)
+            if !items.is_empty() && items.iter().all(|i| matches!(i, Value::Str(_))) =>
+        {
+            Ok(strings(items))
+        }
+        other => Err(type_error(
+            "class-definitions-order",
+            "a non-empty list of sections",
+            other,
+        )),
     }
 }
 

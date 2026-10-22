@@ -152,23 +152,48 @@ fn without_lark_lists(text: &str) -> String {
     let mut kept: Vec<&str> = Vec::new();
     let mut in_list = false;
     for line in text.lines() {
-        if line.starts_with("Expected one of:") {
-            in_list = true;
-            continue;
-        }
-        if line.starts_with("Previous tokens:") {
-            if kept.last() == Some(&"") && !in_list {
-                kept.pop();
+        match LarkLine::of(line, in_list) {
+            LarkLine::ExpectedHeader => in_list = true,
+            LarkLine::PreviousTokens => pop_blank_before_previous_tokens(&mut kept, in_list),
+            LarkLine::ListItem => {}
+            LarkLine::Other => {
+                in_list = false;
+                kept.push(line);
             }
-            continue;
         }
-        if in_list && (line.is_empty() || line.starts_with("\t* ")) {
-            continue;
-        }
-        in_list = false;
-        kept.push(line);
     }
     kept.join("\n")
+}
+
+/// What a line of a parse error is, to lark's lists.
+enum LarkLine {
+    ExpectedHeader,
+    PreviousTokens,
+    ListItem,
+    Other,
+}
+
+impl LarkLine {
+    /// `line`, after a line of the expected-terminals list if `in_list`.
+    fn of(line: &str, in_list: bool) -> LarkLine {
+        if line.starts_with("Expected one of:") {
+            return LarkLine::ExpectedHeader;
+        }
+        if line.starts_with("Previous tokens:") {
+            return LarkLine::PreviousTokens;
+        }
+        let is_list_line = line.is_empty() || line.starts_with("\t* ");
+        if in_list && is_list_line {
+            return LarkLine::ListItem;
+        }
+        LarkLine::Other
+    }
+}
+
+fn pop_blank_before_previous_tokens(kept: &mut Vec<&str>, in_list: bool) {
+    if kept.last() == Some(&"") && !in_list {
+        kept.pop();
+    }
 }
 
 /// Run one case through the oracle and, on both trees, the port; assert identical output; print counts.
@@ -190,7 +215,7 @@ fn compare(corpus: &Corpus, name: &str, cwd: &Path, args: &[&str]) {
         "{name}: {files} files, {rejected} rejected, {problems} problems, exit {}; oracle {oracle_time:.2?}, port {parse_time:.2?}",
         oracle.status
     );
-    let mut failures = same_output(&oracle, &parsed, true);
+    let mut failures = same_output(&oracle, &parsed, Trees::Parser);
     if rejected == 0 {
         let parse = |source: &str| -> Result<Tree, ParseError> {
             Ok(trees
@@ -198,7 +223,8 @@ fn compare(corpus: &Corpus, name: &str, cwd: &Path, args: &[&str]) {
                 .cloned()
                 .expect("a tree for every linted file"))
         };
-        failures.extend(same_output(&oracle, &run_port(cwd, &args, &parse), false));
+        let port = run_port(cwd, &args, &parse);
+        failures.extend(same_output(&oracle, &port, Trees::Oracle));
     }
     assert!(
         failures.is_empty(),
@@ -207,14 +233,49 @@ fn compare(corpus: &Corpus, name: &str, cwd: &Path, args: &[&str]) {
     );
 }
 
-/// How the port's output differs from the oracle's. With `parser`, the port parsed the files itself: lark's
-/// lists drop out of both, and where Python died with a traceback only its last line must match.
-fn same_output(oracle: &Output, port: &Output, parser: bool) -> Vec<String> {
-    let trees = if parser {
-        "parser trees"
-    } else {
-        "oracle trees"
-    };
+/// Where the port's trees came from.
+#[derive(Clone, Copy)]
+enum Trees {
+    Parser,
+    Oracle,
+}
+
+impl std::fmt::Display for Trees {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Trees::Parser => f.write_str("parser trees"),
+            Trees::Oracle => f.write_str("oracle trees"),
+        }
+    }
+}
+
+/// The stderr of both, as compared when the port parsed the files itself: lark's lists drop out of both, and
+/// where Python died with a traceback only its last line must match (a mismatch goes to `failures`).
+fn normalise_parser_stderr(
+    oracle: &Output,
+    port: &Output,
+    failures: &mut Vec<String>,
+) -> (String, String) {
+    let (mut oracle_err, mut port_err) = (oracle.stderr.clone(), port.stderr.clone());
+    if let Some(at) = oracle_err.find("Traceback (most recent call last):") {
+        let exception = oracle_err.lines().last().unwrap_or_default().to_owned();
+        if !port_err.trim_end().ends_with(&format!(": {exception}")) {
+            failures.push(format!(
+                "{}: Python died with {exception}; the port printed {port_err}",
+                Trees::Parser
+            ));
+        }
+        oracle_err.truncate(at);
+        port_err.truncate(port_err.trim_end().rfind('\n').map_or(0, |n| n + 1));
+    }
+    (
+        without_lark_lists(&oracle_err),
+        without_lark_lists(&port_err),
+    )
+}
+
+/// How the port's output differs from the oracle's.
+fn same_output(oracle: &Output, port: &Output, trees: Trees) -> Vec<String> {
     let mut failures = Vec::new();
     if oracle.status != port.status {
         failures.push(format!(
@@ -222,23 +283,10 @@ fn same_output(oracle: &Output, port: &Output, parser: bool) -> Vec<String> {
             oracle.status, port.status
         ));
     }
-    let (mut oracle_err, mut port_err) = (oracle.stderr.clone(), port.stderr.clone());
-    if parser {
-        if let Some(at) = oracle_err.find("Traceback (most recent call last):") {
-            let exception = oracle_err.lines().last().unwrap_or_default().to_owned();
-            if !port_err.trim_end().ends_with(&format!(": {exception}")) {
-                failures.push(format!(
-                    "{trees}: Python died with {exception}; the port printed {port_err}"
-                ));
-            }
-            oracle_err.truncate(at);
-            port_err.truncate(port_err.trim_end().rfind('\n').map_or(0, |n| n + 1));
-        }
-        (oracle_err, port_err) = (
-            without_lark_lists(&oracle_err),
-            without_lark_lists(&port_err),
-        );
-    }
+    let (oracle_err, port_err) = match trees {
+        Trees::Parser => normalise_parser_stderr(oracle, port, &mut failures),
+        Trees::Oracle => (oracle.stderr.clone(), port.stderr.clone()),
+    };
     for (stream, expected, actual) in [
         ("stdout", &oracle.stdout, &port.stdout),
         ("stderr", &oracle_err, &port_err),
@@ -252,22 +300,25 @@ fn same_output(oracle: &Output, port: &Output, parser: bool) -> Vec<String> {
     failures
 }
 
-/// A scratch directory holding hexstead's `.gdlintrc`, or none, to run a case under either config.
-fn config_dir(corpus: &Corpus, name: &str, hexstead_rc: bool) -> PathBuf {
+/// A scratch directory with no `.gdlintrc` in it or above, to run a case under the defaults.
+fn defaults_dir(name: &str) -> PathBuf {
     let dir = scratch(name);
-    if hexstead_rc {
-        std::fs::copy(
-            corpus.root.join("hexstead/.gdlintrc"),
-            dir.join(".gdlintrc"),
-        )
-        .expect("copy .gdlintrc");
-    } else {
-        assert_eq!(
-            gdlint::config::find_config_file(&dir),
-            None,
-            "a gdlintrc above {dir:?} would hide the defaults"
-        );
-    }
+    assert_eq!(
+        gdlint::config::find_config_file(&dir),
+        None,
+        "a gdlintrc above {dir:?} would hide the defaults"
+    );
+    dir
+}
+
+/// A scratch directory holding hexstead's `.gdlintrc`, to run a case under it.
+fn hexstead_rc_dir(corpus: &Corpus, name: &str) -> PathBuf {
+    let dir = scratch(name);
+    std::fs::copy(
+        corpus.root.join("hexstead/.gdlintrc"),
+        dir.join(".gdlintrc"),
+    )
+    .expect("copy .gdlintrc");
     dir
 }
 
@@ -296,14 +347,14 @@ fn wingmen_with_defaults() {
 #[test]
 fn corpora_under_the_other_config() {
     let Some(corpus) = Corpus::find() else { return };
-    let defaults = config_dir(&corpus, "defaults", false);
+    let defaults = defaults_dir("defaults");
     compare(
         &corpus,
         "hexstead-defaults",
         &defaults,
         &[path_arg(&corpus.root.join("hexstead"))],
     );
-    let hexstead_rc = config_dir(&corpus, "hexstead-rc", true);
+    let hexstead_rc = hexstead_rc_dir(&corpus, "hexstead-rc");
     compare(
         &corpus,
         "wingmen-hexstead-rc",
@@ -374,7 +425,7 @@ fn gdtoolkit_linter_test_snippets() {
 #[test]
 fn gdtoolkit_valid_scripts() {
     let Some(corpus) = Corpus::find() else { return };
-    let dir = config_dir(&corpus, "valid-scripts", false);
+    let dir = defaults_dir("valid-scripts");
     let source = corpus.root.join("gdtoolkit-src/tests/valid-gd-scripts");
     for entry in std::fs::read_dir(&source).expect("list valid-gd-scripts") {
         let path = entry.expect("entry").path();
@@ -392,7 +443,7 @@ fn gdtoolkit_valid_scripts() {
 #[test]
 fn command_line_edge_cases() {
     let Some(corpus) = Corpus::find() else { return };
-    let dir = config_dir(&corpus, "cli", false);
+    let dir = defaults_dir("cli");
     std::fs::write(dir.join("ok.gd"), "pass\n").expect("write");
     std::fs::write(dir.join("bad.gd"), "var Xx = 1\r\nfunc f(a):\r\n\tpass \n").expect("write");
     std::fs::create_dir(dir.join("sub.gd")).expect("mkdir");
@@ -419,7 +470,7 @@ fn command_line_edge_cases() {
         compare(&corpus, &format!("cli {args:?}"), &dir, args);
     }
     // A config with every kind of entry gdlint logs, in a directory of its own.
-    let rc = config_dir(&corpus, "cli-rc", false);
+    let rc = defaults_dir("cli-rc");
     std::fs::write(rc.join("ok.gd"), "pass\n").expect("write");
     std::fs::write(
         rc.join("gdlintrc"),
@@ -454,7 +505,7 @@ fn command_line_edge_cases() {
 #[test]
 fn parse_errors() {
     let Some(corpus) = Corpus::find() else { return };
-    let dir = config_dir(&corpus, "parse-errors", false);
+    let dir = defaults_dir("parse-errors");
     let long = format!("var s = \"{}\" )\n", "a".repeat(50));
     let scripts = [
         ("token.gd", "func f():\n\tvar x = )\n"),
