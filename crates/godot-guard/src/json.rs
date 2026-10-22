@@ -1,10 +1,12 @@
 //! JSON text as Python's `json.dumps(value, indent=2)` writes it, so `check --json` and the baseline
 //! file keep 0.4.0's bytes: ASCII only, `": "` between key and value, empty containers as `[]` and `{}`.
+//! `dumps_compact` is `json.dumps(value)`, for `complexity --json`.
 
 use std::fmt::Write;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Json {
+    Null,
     Int(i64),
     Str(String),
     List(Vec<Json>),
@@ -26,6 +28,13 @@ pub fn dumps_sorted(value: &Json) -> String {
     out
 }
 
+/// `json.dumps(value)`: one line, `", "` between items and `": "` between key and value.
+pub fn dumps_compact(value: &Json) -> String {
+    let mut out = String::new();
+    write_compact(&mut out, value);
+    out
+}
+
 /// `json.dumps(text)`: a quoted string with Python's ASCII escapes.
 pub fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
@@ -35,6 +44,7 @@ pub fn quote(text: &str) -> String {
 
 fn write_value(out: &mut String, value: &Json, depth: usize, sort: bool) {
     match value {
+        Json::Null => out.push_str("null"),
         Json::Int(number) => write!(out, "{number}").expect("writing to a String"),
         Json::Str(text) => write_string(out, text),
         Json::List(items) => write_list(out, items, depth, sort),
@@ -72,6 +82,34 @@ fn write_object(out: &mut String, entries: &[(String, Json)], depth: usize, sort
         write_value(out, item, depth + 1, sort);
     }
     close(out, depth, '}');
+}
+
+fn write_compact(out: &mut String, value: &Json) {
+    match value {
+        Json::List(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                write_compact(out, item);
+            }
+            out.push(']');
+        }
+        Json::Object(entries) => {
+            out.push('{');
+            for (index, (key, item)) in entries.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                write_string(out, key);
+                out.push_str(": ");
+                write_compact(out, item);
+            }
+            out.push('}');
+        }
+        scalar => write_value(out, scalar, 0, false),
+    }
 }
 
 fn separate(out: &mut String, index: usize, depth: usize) {
@@ -137,6 +175,22 @@ mod tests {
             "{\n  \"b\": [\n    1,\n    \"x\"\n  ],\n  \"a\": {},\n  \"c\": []\n}"
         );
         assert!(dumps_sorted(&value).starts_with("{\n  \"a\": {},"));
+    }
+
+    #[test]
+    fn compacts_like_python() {
+        let value = Json::Object(vec![
+            (
+                "b".into(),
+                Json::List(vec![Json::Int(1), Json::Null, Json::Str("é".into())]),
+            ),
+            ("a".into(), Json::Object(vec![])),
+            ("c".into(), Json::List(vec![])),
+        ]);
+        assert_eq!(
+            dumps_compact(&value),
+            "{\"b\": [1, null, \"\\u00e9\"], \"a\": {}, \"c\": []}"
+        );
     }
 
     #[test]
