@@ -4,7 +4,6 @@
 
 use std::env;
 use std::ffi::OsString;
-use std::io::{self, Write};
 
 use crate::argparse::{Exit, Kind, Namespace, Nargs, Opt, Parser};
 use crate::check::{self, Request};
@@ -129,12 +128,6 @@ pub fn build_parser() -> Parser {
     }
 }
 
-/// Write to stdout now; a closed pipe drops the rest, as it would end a shell pipeline.
-pub fn emit(text: &str) {
-    let mut out = io::stdout().lock();
-    let _ = out.write_all(text.as_bytes()).and_then(|()| out.flush());
-}
-
 fn load() -> Result<Config> {
     let cwd = env::current_dir().map_err(|e| Failure::crash("the working directory", e))?;
     config::load(&cwd)
@@ -163,11 +156,11 @@ fn format_files(config: &Config, files: &[String]) -> Result<i32> {
 }
 
 fn run_gate(args: &Namespace) -> Result<i32> {
+    let mut config = load()?;
     if args.flag("staged") && !args.positionals.is_empty() {
         eprintln!("godot-guard gate: pass --staged or files, not both");
         return Ok(1);
     }
-    let mut config = load()?;
     config.gate.jobs = gate_jobs(&config, args);
     gate::gate(
         &config,
@@ -219,32 +212,33 @@ fn run_command(args: &Namespace) -> Result<i32> {
         "gate" => (run_gate(args)?, String::new()),
         other => unreachable!("argparse accepted the command {other}"),
     };
-    emit(&text);
+    tools::write_stdout(&text)?;
     Ok(status)
+}
+
+/// Print what argparse asked to, and the status it asked to exit with.
+fn finish_parse(exit: Exit) -> i32 {
+    if let Err(error) = tools::write_stdout(&exit.stdout) {
+        return report(&error);
+    }
+    eprint!("{}", exit.stderr);
+    exit.status
+}
+
+/// Print the failure and the exit status 0.4.0's `main` gives it.
+fn report(error: &Failure) -> i32 {
+    eprintln!("godot-guard: {error}");
+    match error {
+        Failure::Config(_) | Failure::Tool(_) => 2,
+        Failure::Crash(_) => 1,
+    }
 }
 
 /// Run the command line; the process's exit status before masking to a byte.
 pub fn main(argv: &[String]) -> i32 {
     let args = match build_parser().parse(argv, VERSION) {
         Ok(args) => args,
-        Err(Exit {
-            status,
-            stdout,
-            stderr,
-        }) => {
-            emit(&stdout);
-            eprint!("{stderr}");
-            return status;
-        }
+        Err(exit) => return finish_parse(exit),
     };
-    match run_command(&args) {
-        Ok(status) => status,
-        Err(error) => {
-            eprintln!("godot-guard: {error}");
-            match error {
-                Failure::Config(_) | Failure::Tool(_) => 2,
-                Failure::Crash(_) => 1,
-            }
-        }
-    }
+    run_command(&args).unwrap_or_else(|error| report(&error))
 }

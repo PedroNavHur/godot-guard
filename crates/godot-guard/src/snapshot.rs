@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 use crate::config::{BASELINE_NAME, Config, hidden};
 use crate::error::{Failure, Result};
+use crate::tools::Scratch;
 
 /// Each tool takes the first of its names found from the working directory upward.
 const TOOL_CONFIGS: [[&str; 2]; 2] = [["gdlintrc", ".gdlintrc"], ["gdformatrc", ".gdformatrc"]];
@@ -123,10 +124,10 @@ fn copy_tool_configs(source: &Path, target: &Path) -> Result<()> {
 /// the copy lives as long as the returned directory.
 ///
 /// The baseline falls back to the working tree's when the index has none.
-pub fn snapshot(config: &Config, chosen: &[String]) -> Result<(tempfile::TempDir, Config)> {
+pub fn snapshot(config: &Config, chosen: &[String]) -> Result<(Scratch, Config)> {
     let top = git(config, &["rev-parse", "--show-toplevel"], None)?;
     let top = fs::canonicalize(top.trim()).map_err(|e| Failure::crash(top.trim(), e))?;
-    let temp = tempfile::tempdir().map_err(|e| Failure::crash("a temporary directory", e))?;
+    let temp = Scratch::new(".tmp")?;
     let base =
         fs::canonicalize(temp.path()).map_err(|e| Failure::crash(temp.path().display(), e))?;
     let below = config

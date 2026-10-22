@@ -1,11 +1,8 @@
 //! Gate steps: what each one is, how they run in order, and how a phase runs them on a worker pool.
 
-use std::collections::HashSet;
 use std::env;
-use std::io::{self, Write};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{LazyLock, Mutex, mpsc};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
@@ -13,7 +10,7 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 use crate::error::{Failure, Result};
-use crate::tools::{self, Echo, Env};
+use crate::tools::{self, Echo, Env, Scratch};
 
 /// Phases run in this order; steps within one phase may run concurrently.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,8 +29,8 @@ pub const PHASES: [Phase; 3] = [Phase::Prepare, Phase::Import, Phase::Test];
 /// its status.
 pub type Action<'a> = Box<dyn Fn(Option<Echo>, &Env) -> Result<i32> + Sync + 'a>;
 
-/// Where the gate's own lines go: stdout, or a test's buffer.
-pub type Out<'a> = dyn Fn(&str) + Sync + 'a;
+/// Where the gate's own lines go: stdout, or a test's buffer. A failed write stops the gate.
+pub type Out<'a> = dyn Fn(&str) -> Result<()> + Sync + 'a;
 
 pub struct Step<'a> {
     pub name: String,
@@ -83,21 +80,21 @@ pub fn run_steps(steps: &[Step], jobs: usize, out: &Out) -> Result<i32> {
     out(&format!(
         "gate passed in {:.1}s\n",
         started.elapsed().as_secs_f64()
-    ));
+    ))?;
     Ok(0)
 }
 
 fn run_serial(steps: &[Step], out: &Out) -> Result<Vec<String>> {
     for step in steps {
-        out(&format!("== {}\n", step.name));
+        out(&format!("== {}\n", step.name))?;
         let began = Instant::now();
         let status = run_step(step, None, &None, out)?;
         let elapsed = began.elapsed().as_secs_f64();
         if status != 0 {
-            out(&format!("== {} failed after {elapsed:.1}s\n", step.name));
+            out(&format!("== {} failed after {elapsed:.1}s\n", step.name))?;
             return Ok(vec![step.name.clone()]);
         }
-        out(&format!("== {} passed in {elapsed:.1}s\n", step.name));
+        out(&format!("== {} passed in {elapsed:.1}s\n", step.name))?;
     }
     Ok(Vec::new())
 }
@@ -111,7 +108,7 @@ fn run_phases(steps: &[Step], jobs: usize, out: &Out) -> Result<Vec<String>> {
             run_concurrent(&group, jobs, out)?
         };
         if !failed.is_empty() {
-            out(&format!("== failed: {}\n", failed.join(", ")));
+            out(&format!("== failed: {}\n", failed.join(", ")))?;
             return Ok(failed);
         }
     }
@@ -124,38 +121,66 @@ pub fn run_concurrent(steps: &[&Step], jobs: usize, out: &Out) -> Result<Vec<Str
     let stop = AtomicBool::new(false);
     let next = AtomicUsize::new(0);
     let (sender, receiver) = mpsc::channel();
-    let mut failed = Vec::new();
-    let mut error = None;
     thread::scope(|scope| {
         for _ in 0..jobs.min(steps.len()) {
             let sender = sender.clone();
             let (stop, next) = (&stop, &next);
-            scope.spawn(move || {
-                while let Some(step) = steps.get(next.fetch_add(1, Ordering::SeqCst)) {
-                    let _ = sender.send(run_captured(step, stop, out));
-                }
-            });
+            scope.spawn(move || work(steps, next, stop, &sender, out));
         }
         drop(sender);
-        for outcome in receiver {
-            match outcome {
-                _ if error.is_some() => {}
-                Ok(None) => {}
-                Ok(Some(outcome)) => {
-                    print_block(&outcome, out);
-                    if outcome.status != 0 {
-                        failed.push(outcome.name);
-                    }
-                }
-                Err(raised) => {
-                    // 0.4.0 re-raises it here; the steps still running finish unprinted.
-                    stop.store(true, Ordering::SeqCst);
-                    error = Some(raised);
-                }
+        collect(receiver, &stop, out)
+    })
+}
+
+type Received = Result<Option<Outcome>>;
+
+/// A worker: run the steps nobody has taken, sending each outcome.
+fn work(
+    steps: &[&Step],
+    next: &AtomicUsize,
+    stop: &AtomicBool,
+    sender: &mpsc::Sender<Received>,
+    out: &Out,
+) {
+    while let Some(step) = steps.get(next.fetch_add(1, Ordering::SeqCst)) {
+        // The receiver outlives every worker, so a send never fails.
+        let _ = sender.send(run_captured(step, stop, out));
+    }
+}
+
+/// Print each outcome as it arrives; the failed steps' names. After an error the rest are dropped unprinted
+/// and the error is returned.
+fn collect(
+    receiver: mpsc::Receiver<Received>,
+    stop: &AtomicBool,
+    out: &Out,
+) -> Result<Vec<String>> {
+    let mut failed = Vec::new();
+    let mut error = None;
+    for received in receiver {
+        if error.is_some() {
+            continue;
+        }
+        match record(received, out) {
+            Ok(Some(name)) => failed.push(name),
+            Ok(None) => {}
+            Err(raised) => {
+                // 0.4.0 re-raises it here; the steps still running finish unprinted.
+                stop.store(true, Ordering::SeqCst);
+                error = Some(raised);
             }
         }
-    });
+    }
     error.map_or(Ok(failed), Err)
+}
+
+/// Print a finished step's block. Its name if it failed; None if it passed or never started.
+fn record(received: Received, out: &Out) -> Result<Option<String>> {
+    let Some(outcome) = received? else {
+        return Ok(None);
+    };
+    print_block(&outcome, out)?;
+    Ok((outcome.status != 0).then_some(outcome.name))
 }
 
 /// The step with its output captured, or None when a failure has already stopped the phase.
@@ -185,7 +210,7 @@ fn run_captured(step: &Step, stop: &AtomicBool, out: &Out) -> Result<Option<Outc
 }
 
 /// One step's output, framed by its name and how it ended.
-fn print_block(outcome: &Outcome, out: &Out) {
+fn print_block(outcome: &Outcome, out: &Out) -> Result<()> {
     let mut output = outcome.output.clone();
     if !output.is_empty() && !output.ends_with('\n') {
         output.push('\n');
@@ -198,7 +223,7 @@ fn print_block(outcome: &Outcome, out: &Out) {
     out(&format!(
         "== {}\n{output}== {} {ending} {:.1}s\n",
         outcome.name, outcome.name, outcome.elapsed
-    ));
+    ))
 }
 
 /// The step's status. A missing tool fails it, with the reason written to its output.
@@ -209,7 +234,7 @@ fn run_step(step: &Step, mut echo: Option<Echo>, env: &Env, out: &Out) -> Result
             let line = format!("godot-guard: {message}\n");
             match echo {
                 Some(echo) => echo(&line),
-                None => out(&line),
+                None => out(&line)?,
             }
             Ok(127)
         }
@@ -217,20 +242,11 @@ fn run_step(step: &Step, mut echo: Option<Echo>, env: &Env, out: &Out) -> Result
     }
 }
 
-/// Temporary user-data directories now in use, removed by a stop before it exits.
-static TEMPS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Mutex::default);
-
-fn temps() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
-    TEMPS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// For a Godot test step, an environment with a fresh user-data dir, removed on drop. Other steps get none.
 ///
 /// Only TEST steps run beside each other; IMPORT runs alone and keeps the inherited environment.
 pub struct Isolation {
-    temp: Option<tempfile::TempDir>,
+    _temp: Option<Scratch>,
     env: Env,
 }
 
@@ -238,15 +254,11 @@ impl Isolation {
     pub fn new(step: &Step) -> Result<Isolation> {
         if !(step.godot && step.phase == Phase::Test) {
             return Ok(Isolation {
-                temp: None,
+                _temp: None,
                 env: None,
             });
         }
-        let temp = tempfile::Builder::new()
-            .prefix("godot-guard-")
-            .tempdir()
-            .map_err(|e| Failure::crash("a temporary directory", e))?;
-        temps().insert(temp.path().to_owned());
+        let temp = Scratch::new("godot-guard-")?;
         let mut env: Vec<_> = env::vars_os()
             .filter(|(key, _)| key != "XDG_DATA_HOME")
             .collect();
@@ -257,7 +269,7 @@ impl Isolation {
             env.push(("HOME".into(), temp.path().into()));
         }
         Ok(Isolation {
-            temp: Some(temp),
+            _temp: Some(temp),
             env: Some(env),
         })
     }
@@ -267,16 +279,9 @@ impl Isolation {
     }
 }
 
-impl Drop for Isolation {
-    fn drop(&mut self) {
-        if let Some(temp) = self.temp.take() {
-            temps().remove(temp.path());
-        }
-    }
-}
-
-/// On SIGINT or SIGTERM, kill every child this process started, remove the step directories, and exit with
-/// 128 plus the signal number, printing nothing more.
+/// On SIGINT or SIGTERM, kill every Godot and step child `run_process` started, remove the temporary
+/// directories (user data, the staged snapshot, the analyzer), and exit with 128 plus the signal number,
+/// printing nothing more.
 ///
 /// 0.4.0 does this during a gate's steps only; this covers every command, so `run` leaves no Godot behind.
 pub fn stop_on_signals() -> Result<()> {
@@ -285,11 +290,9 @@ pub fn stop_on_signals() -> Result<()> {
     thread::spawn(move || {
         if let Some(signum) = signals.forever().next() {
             tools::stop_children();
-            let mut stdout = io::stdout().lock();
-            let _ = stdout.flush();
-            for temp in temps().iter() {
-                let _ = std::fs::remove_dir_all(temp);
-            }
+            tools::remove_scratch();
+            // No stdout lock: an in-process gdformat or gdlint may hold it for its whole run, and the
+            // exit skips a locked stdout rather than wait for it.
             std::process::exit(128 + signum);
         }
     });

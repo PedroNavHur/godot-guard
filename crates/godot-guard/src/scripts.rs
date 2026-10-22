@@ -1,7 +1,8 @@
-//! Each script read once and parsed once per run, shared by the Resource map, `check`, and the gate's steps.
+//! Each script read once and parsed once per run, shared by the Resource map and `check`; gdformat and
+//! gdlint read and parse their files themselves.
 //!
 //! Text is read as 0.4.0 reads it (UTF-8 with replacement, universal newlines). A script that changes on
-//! disk during the run keeps the text first read, where 0.4.0 would read it again.
+//! disk during the run keeps the text first read for those two, where 0.4.0 would read it again.
 
 use std::collections::{HashMap, HashSet};
 use std::io;

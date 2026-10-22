@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use common::Repo;
+use common::shim::{Shim, git};
 use godot_guard::error::Failure;
 use godot_guard::schedule::{Isolation, Phase, Step, run_concurrent, run_steps};
 use godot_guard::tools::{self, Echo};
@@ -19,7 +20,10 @@ use regex::Regex;
 /// Run `steps` on `jobs` workers; the status and everything the gate printed, step output included.
 fn captured(steps: &[Step], jobs: usize) -> (i32, String) {
     let printed = Mutex::new(String::new());
-    let out = |text: &str| printed.lock().unwrap().push_str(text);
+    let out = |text: &str| {
+        printed.lock().unwrap().push_str(text);
+        Ok(())
+    };
     let status = run_steps(steps, jobs, &out).unwrap();
     (status, printed.into_inner().unwrap())
 }
@@ -152,7 +156,7 @@ fn no_new_step_starts_after_a_failure() {
         ["later0", "later1", "later2"].map(|name| fake(name, Phase::Prepare, 0, &log, &[])),
     );
     let refs: Vec<&Step> = steps.iter().collect();
-    let failed = run_concurrent(&refs, 1, &|_: &str| {}).unwrap();
+    let failed = run_concurrent(&refs, 1, &|_: &str| Ok(())).unwrap();
     assert_eq!(failed, ["bad"]);
     assert_eq!(logged(&log), ["bad"]);
 }
@@ -351,4 +355,44 @@ fn sigint_mid_serial_step_exits_130_and_kills_the_step() {
 #[test]
 fn sigterm_mid_serial_step_exits_143_and_kills_the_step() {
     stop_gate_mid_step(libc::SIGTERM, "1");
+}
+
+/// A staged full gate whose analyzer step is mid-`sleep 30`, with temporary files going to `temp`.
+fn stopped_staged_gate(temp: &std::path::Path) -> (std::process::Child, Shim) {
+    let shim = Shim::new();
+    shim.repo.write(
+        ".godot-guard.yml",
+        "paths: [.]\ngate:\n  format: false\n  lint: false\n  import: false\n  smoke: false\n",
+    );
+    shim.godot(0, "sleep 30");
+    shim.init();
+    git(&shim.repo.root, &["add", "a.gd"]);
+    let gate = Command::new(env!("CARGO_BIN_EXE_godot-guard"))
+        .args(["gate", "--staged", "--jobs", "1"])
+        .current_dir(&shim.repo.root)
+        .env("GODOT", shim.repo.path(".bin/godot"))
+        .env("TMPDIR", temp)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while shim.calls().is_empty() {
+        assert!(Instant::now() < deadline, "the gate never started Godot");
+        thread::sleep(Duration::from_millis(20));
+    }
+    (gate, shim)
+}
+
+#[test]
+fn a_stop_removes_the_staged_snapshot_and_the_analyzer_copy() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut gate, _shim) = stopped_staged_gate(temp.path());
+    let before = fs::read_dir(temp.path()).unwrap().count();
+    assert_eq!(before, 2, "the snapshot and the analyzer copy");
+    // SAFETY: a plain signal syscall on the process this test started.
+    unsafe { libc::kill(gate.id() as i32, libc::SIGTERM) };
+    assert_eq!(gate.wait().unwrap().code(), Some(128 + libc::SIGTERM));
+    let left: Vec<_> = fs::read_dir(temp.path()).unwrap().collect();
+    assert!(left.is_empty(), "the stop left {left:?}");
 }

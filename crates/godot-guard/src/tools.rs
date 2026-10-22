@@ -1,7 +1,8 @@
 //! Locate Godot, and run Godot with its diagnostics treated as failures.
 //!
-//! Every child runs in its own session and is registered while it lives, so a stop (SIGINT or SIGTERM)
-//! kills each one's whole process group and the gate leaves nothing running.
+//! Every child `run_process` starts runs in its own session and is registered while it lives, so a stop
+//! (SIGINT or SIGTERM) kills each one's whole process group and the gate leaves no Godot or step running.
+//! The temporary directories made through `Scratch` are registered too, and the stop removes them.
 
 use std::collections::HashSet;
 use std::env;
@@ -58,10 +59,55 @@ pub fn is_diagnostic(line: &str) -> bool {
     line.contains("SCRIPT ERROR:") || line.starts_with("ERROR:") || line.starts_with("WARNING:")
 }
 
-/// Write to stdout and flush, as `print(..., flush=True)` does; a closed pipe drops the text.
-pub fn write_stdout(text: &str) {
+/// Write to stdout and flush, as `print(..., flush=True)` does. A closed pipe drops the text, as it ends a
+/// shell pipeline; any other write error is a crash, where 0.4.0's `print` raises.
+pub fn write_stdout(text: &str) -> Result<()> {
     let mut out = io::stdout().lock();
-    let _ = out.write_all(text.as_bytes()).and_then(|()| out.flush());
+    match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
+        Err(e) if e.kind() != io::ErrorKind::BrokenPipe => Err(Failure::crash("stdout", e)),
+        _ => Ok(()),
+    }
+}
+
+/// Directories made by `Scratch` and not yet dropped.
+static SCRATCH: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Mutex::default);
+
+fn scratch() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+    SCRATCH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// A temporary directory removed on drop, and by a stop, since `process::exit` runs no destructors.
+pub struct Scratch(tempfile::TempDir);
+
+impl Scratch {
+    pub fn new(prefix: &str) -> Result<Scratch> {
+        let directory = tempfile::Builder::new()
+            .prefix(prefix)
+            .tempdir()
+            .map_err(|e| Failure::crash("a temporary directory", e))?;
+        scratch().insert(directory.path().to_owned());
+        Ok(Scratch(directory))
+    }
+
+    pub fn path(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        scratch().remove(self.0.path());
+    }
+}
+
+/// Remove the directories still in use, for a stop.
+pub fn remove_scratch() {
+    for directory in scratch().iter() {
+        // The stop exits next; a directory it cannot remove is left to the system's temp cleaning.
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }
 
 /// Live children by pid, and whether a stop has refused new ones.
@@ -110,7 +156,7 @@ fn start(command: &mut Command) -> Result<Child> {
     Ok(child)
 }
 
-/// Forget `child`; if it is still running (its reader failed), kill it and reap it.
+/// Forget `child`; if it is still running (its reader or its wait failed), kill it and reap it.
 fn finish(child: &mut Child) -> Result<()> {
     registry().live.remove(&(child.id() as i32));
     if matches!(child.try_wait(), Ok(None)) {
@@ -153,18 +199,13 @@ pub fn status_code(status: ExitStatus) -> i32 {
         .unwrap_or_else(|| -status.signal().unwrap_or(0))
 }
 
-/// Feed `reader`'s text to `echo` line by line, as Python's text mode reads it: invalid UTF-8 replaced and
-/// `\r\n` and `\r` read as `\n`.
-fn echo_lines(reader: impl Read, echo: Echo) -> io::Result<()> {
-    let mut reader = BufReader::new(reader);
-    let mut line = Vec::new();
+/// Move the bytes before the next `\n` or `\r` from `reader` to `line` and consume that byte; it, or None at
+/// the end of the input.
+fn take_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Option<u8>> {
     loop {
         let buffer = reader.fill_buf()?;
         if buffer.is_empty() {
-            if !line.is_empty() {
-                echo(&String::from_utf8_lossy(&line));
-            }
-            return Ok(());
+            return Ok(None);
         }
         let Some(end) = buffer.iter().position(|&b| b == b'\n' || b == b'\r') else {
             line.extend_from_slice(buffer);
@@ -173,13 +214,38 @@ fn echo_lines(reader: impl Read, echo: Echo) -> io::Result<()> {
             continue;
         };
         line.extend_from_slice(&buffer[..end]);
-        let carriage = buffer[end] == b'\r';
+        let terminator = buffer[end];
         reader.consume(end + 1);
-        if carriage && reader.fill_buf()?.first() == Some(&b'\n') {
-            reader.consume(1);
+        return Ok(Some(terminator));
+    }
+}
+
+/// Read one line into `line`, ending in `\n` whether the child wrote `\n`, `\r\n`, or `\r`. False when the
+/// input ended first, leaving the unterminated rest, if any, in `line`.
+fn read_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<bool> {
+    let Some(terminator) = take_line(reader, line)? else {
+        return Ok(false);
+    };
+    if terminator == b'\r' && reader.fill_buf()?.first() == Some(&b'\n') {
+        reader.consume(1);
+    }
+    line.push(b'\n');
+    Ok(true)
+}
+
+/// Feed `reader`'s text to `echo` line by line, as Python's text mode reads it: invalid UTF-8 replaced and
+/// `\r\n` and `\r` read as `\n`.
+fn echo_lines(reader: impl Read, echo: Echo) -> io::Result<()> {
+    let mut reader = BufReader::new(reader);
+    let mut line = Vec::new();
+    loop {
+        let ended = read_line(&mut reader, &mut line)?;
+        if !line.is_empty() {
+            echo(&String::from_utf8_lossy(&line));
         }
-        line.push(b'\n');
-        echo(&String::from_utf8_lossy(&line));
+        if !ended {
+            return Ok(());
+        }
         line.clear();
     }
 }
@@ -215,10 +281,13 @@ pub fn run_process(
     let mut child = start(&mut process)?;
     // The parent's copies of the write end close here, so the read ends when the child's do.
     drop(process);
-    let read = echo_lines(reader, echo);
+    if let Err(e) = echo_lines(reader, echo) {
+        // Nothing reads the child's output now: kill it rather than wait for it to end.
+        finish(&mut child)?;
+        return Err(Failure::crash("reading a child's output", e));
+    }
     let status = child.wait();
     finish(&mut child)?;
-    read.map_err(|e| Failure::crash("reading a child's output", e))?;
     Ok(status_code(status.map_err(|e| Failure::crash("wait", e))?))
 }
 
@@ -230,7 +299,12 @@ pub fn run_godot(
     echo: Option<Echo>,
 ) -> Result<i32> {
     let mut diagnostics = false;
-    let mut terminal = |text: &str| write_stdout(text);
+    let mut written = Ok(());
+    let mut terminal = |text: &str| {
+        if written.is_ok() {
+            written = write_stdout(text);
+        }
+    };
     let echo: Echo = match echo {
         Some(echo) => echo,
         None => &mut terminal,
@@ -241,7 +315,9 @@ pub fn run_godot(
     };
     let mut command = vec![godot()?.into_os_string()];
     command.extend(args.iter().cloned());
-    let status = run_process(&command, cwd, env, Some(&mut watch))?;
+    let status = run_process(&command, cwd, env, Some(&mut watch));
+    written?;
+    let status = status?;
     Ok(if status != 0 {
         status
     } else {

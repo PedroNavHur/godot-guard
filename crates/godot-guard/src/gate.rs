@@ -13,7 +13,7 @@ use crate::schedule::{Out, Phase, Step, run_steps};
 use crate::scripts::Scripts;
 use crate::snapshot::{indexed, snapshot, staged};
 use crate::toolkit;
-use crate::tools::{self, Echo, run_godot, run_process};
+use crate::tools::{self, Echo, Scratch, run_godot, run_process};
 
 pub const ANALYZER: &str = include_str!("../../../src/godot_guard/data/analyze_scripts.gd");
 
@@ -176,7 +176,7 @@ fn check_step(plan: &Plan, echo: Option<Echo>) -> Result<i32> {
     let (status, text) = check::check(plan.sources, request, plan.scripts)?;
     match echo {
         Some(echo) => echo(&text),
-        None => tools::write_stdout(&text),
+        None => tools::write_stdout(&text)?,
     }
     Ok(status)
 }
@@ -203,11 +203,8 @@ fn absolute(config: &Config, path: &str) -> String {
 }
 
 /// The analyzer script in a temporary directory, for Godot's `--script`.
-fn write_analyzer() -> Result<(tempfile::TempDir, PathBuf)> {
-    let temp = tempfile::Builder::new()
-        .prefix("godot-guard-")
-        .tempdir()
-        .map_err(|e| Failure::crash("a temporary directory", e))?;
+fn write_analyzer() -> Result<(Scratch, PathBuf)> {
+    let temp = Scratch::new("godot-guard-")?;
     let path = temp.path().join("analyze_scripts.gd");
     fs::write(&path, ANALYZER).map_err(|e| Failure::crash(path.display(), e))?;
     Ok((temp, path))
@@ -220,7 +217,7 @@ fn run_gate(
     sources: Option<&Config>,
 ) -> Result<i32> {
     if chosen.is_some_and(<[String]>::is_empty) && fast {
-        tools::write_stdout("godot-guard gate: no GDScript files selected\n");
+        tools::write_stdout("godot-guard gate: no GDScript files selected\n")?;
         return Ok(0);
     }
     let jobs = worker_count(config.gate.jobs)?;
@@ -255,7 +252,7 @@ pub fn gate(config: &Config, fast: bool, use_staged: bool, files: &[String]) -> 
     for link in &links {
         tools::write_stdout(&format!(
             "{link}: symlinked scripts are not supported; commit the real file\n"
-        ));
+        ))?;
     }
     if !links.is_empty() {
         return Ok(1);

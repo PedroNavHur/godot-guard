@@ -3,6 +3,8 @@
 
 mod common;
 
+use std::os::unix::ffi::OsStrExt;
+
 use common::Repo;
 use godot_guard::argparse::Exit;
 use godot_guard::cli::{VERSION, build_parser, gate_jobs, jobs_argument};
@@ -183,4 +185,21 @@ fn the_json_flag_on_the_command_line() {
     assert_eq!(run.status, 0, "{run:?}");
     let report: Value = serde_json::from_str(&run.stdout).unwrap();
     assert_eq!(report["files"], serde_json::json!(["b.gd"]));
+}
+
+#[test]
+fn an_argument_that_is_not_utf_8_is_a_usage_error_not_a_panic() {
+    let repo = Repo::new(&[], None);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_godot-guard"))
+        .arg("check")
+        .arg(std::ffi::OsStr::from_bytes(b"caf\xe9.gd"))
+        .current_dir(&repo.root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "godot-guard: error: argument \"caf\\xE9.gd\" is not valid UTF-8\n"
+    );
 }

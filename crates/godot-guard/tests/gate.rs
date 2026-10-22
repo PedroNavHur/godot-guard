@@ -262,6 +262,17 @@ fn staged_and_files_together_are_refused() {
 }
 
 #[test]
+fn a_bad_config_is_reported_before_the_staged_and_files_conflict() {
+    let repo = Repo::new(&[], Some("limits: {cognitive: 0.5}\n"));
+    let run = repo.run(&["gate", "--staged", "a.gd"]);
+    assert_eq!(run.status, 2, "{run:?}");
+    assert!(
+        run.stderr.starts_with("godot-guard: .godot-guard.yml: "),
+        "{run:?}"
+    );
+}
+
+#[test]
 fn run_fails_on_diagnostics_and_keeps_the_exit_status() {
     let shim = Shim::new();
     for (extra, status, expected) in [
