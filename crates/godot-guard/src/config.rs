@@ -38,21 +38,59 @@ pub struct Limits {
     pub inputs: i64,
 }
 
-impl Limits {
-    pub const NAMES: [&'static str; 4] = ["cognitive", "cyclomatic", "comment-lines", "inputs"];
+/// One of the `limits` keys: the only place a key name maps to a `Limits` field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Limit {
+    Cognitive,
+    Cyclomatic,
+    CommentLines,
+    Inputs,
+}
 
-    pub fn get(&self, name: &str) -> i64 {
-        match name {
-            "cognitive" => self.cognitive,
-            "cyclomatic" => self.cyclomatic,
-            "comment-lines" => self.comment_lines,
-            "inputs" => self.inputs,
-            _ => panic!("unknown limit {name}"),
+impl Limit {
+    /// In 0.4.0's key order.
+    pub const ALL: [Limit; 4] = [
+        Limit::Cognitive,
+        Limit::Cyclomatic,
+        Limit::CommentLines,
+        Limit::Inputs,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Limit::Cognitive => "cognitive",
+            Limit::Cyclomatic => "cyclomatic",
+            Limit::CommentLines => "comment-lines",
+            Limit::Inputs => "inputs",
+        }
+    }
+
+    pub fn names() -> [&'static str; 4] {
+        Self::ALL.map(Limit::name)
+    }
+}
+
+impl Limits {
+    pub fn get(&self, limit: Limit) -> i64 {
+        match limit {
+            Limit::Cognitive => self.cognitive,
+            Limit::Cyclomatic => self.cyclomatic,
+            Limit::CommentLines => self.comment_lines,
+            Limit::Inputs => self.inputs,
+        }
+    }
+
+    pub fn set(&mut self, limit: Limit, value: i64) {
+        match limit {
+            Limit::Cognitive => self.cognitive = value,
+            Limit::Cyclomatic => self.cyclomatic = value,
+            Limit::CommentLines => self.comment_lines = value,
+            Limit::Inputs => self.inputs = value,
         }
     }
 
     pub fn entries(&self) -> [(&'static str, i64); 4] {
-        Self::NAMES.map(|name| (name, self.get(name)))
+        Limit::ALL.map(|limit| (limit.name(), self.get(limit)))
     }
 }
 
@@ -209,9 +247,7 @@ fn walk_directory(root: &Path, directory: &Path, found: &mut Vec<String>) {
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
         if path.is_dir() {
-            if !name.starts_with('.') && !entry.file_type().is_ok_and(|t| t.is_symlink()) {
-                subdirectories.push(name);
-            }
+            subdirectories.extend(enters(&entry, &name).then_some(name));
         } else if name.ends_with(".gd") {
             found.push(relative_posix(root, &path));
         }
@@ -220,6 +256,11 @@ fn walk_directory(root: &Path, directory: &Path, found: &mut Vec<String>) {
     for name in subdirectories {
         walk_directory(root, &directory.join(name), found);
     }
+}
+
+/// Whether the walk enters a directory: not hidden, not a symlink.
+fn enters(entry: &fs::DirEntry, name: &str) -> bool {
+    !name.starts_with('.') && !entry.file_type().is_ok_and(|t| t.is_symlink())
 }
 
 /// `path.relative_to(root).as_posix()`, lexically; `.` components drop out as pathlib drops them.
@@ -273,6 +314,23 @@ pub fn load(start: &Path) -> Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_limit_reads_and_writes_its_own_field() {
+        let mut limits = Config::new(PathBuf::new()).limits;
+        for (value, limit) in (100..).zip(Limit::ALL) {
+            limits.set(limit, value);
+        }
+        assert_eq!(
+            limits.entries(),
+            [
+                ("cognitive", 100),
+                ("cyclomatic", 101),
+                ("comment-lines", 102),
+                ("inputs", 103)
+            ]
+        );
+    }
 
     #[test]
     fn hidden_looks_at_directories_only() {

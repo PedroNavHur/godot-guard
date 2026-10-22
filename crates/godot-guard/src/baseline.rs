@@ -6,7 +6,7 @@ use std::path::Path;
 
 use gdrules::patterns::COUNTED;
 
-use crate::config::{BASELINE_NAME, Config, Level};
+use crate::config::{BASELINE_NAME, Config, Level, Limit};
 use crate::error::{Failure, Result};
 use crate::json::{self, Json};
 use crate::py;
@@ -18,11 +18,15 @@ const TREE_RULES: [&str; 2] = ["cognitive-complexity", "cyclomatic-complexity"];
 /// The limit an item's value is checked against. Counted rules (long-comment, the pattern rules) count
 /// hits, so any is over.
 pub fn limit(config: &Config, rule: &str) -> i64 {
+    limit_of(rule).map_or(0, |limit| config.limits.get(limit))
+}
+
+fn limit_of(rule: &str) -> Option<Limit> {
     match rule {
-        "cognitive-complexity" => config.limits.cognitive,
-        "cyclomatic-complexity" => config.limits.cyclomatic,
-        "interface-cap" => config.limits.inputs,
-        _ => 0,
+        "cognitive-complexity" => Some(Limit::Cognitive),
+        "cyclomatic-complexity" => Some(Limit::Cyclomatic),
+        "interface-cap" => Some(Limit::Inputs),
+        _ => None,
     }
 }
 

@@ -1,7 +1,7 @@
 //! Validate a loaded `.godot-guard.yml` against the defaults, in 0.4.0's order and with its messages,
 //! and apply it to a `Config`.
 
-use crate::config::{AUTO, Boundary, CONFIG_NAME, Config, Jobs, Level, Limits, TestScript};
+use crate::config::{AUTO, Boundary, CONFIG_NAME, Config, Jobs, Level, Limit, TestScript};
 use crate::error::{Failure, Result};
 use crate::fnmatch::Pattern;
 use crate::godot_warnings;
@@ -174,7 +174,7 @@ pub fn apply(config: &mut Config, data: Option<Value>) -> Result<()> {
         ),
         None => None,
     };
-    let limits = section(&data, "limits", &Limits::NAMES)?;
+    let limits = section(&data, "limits", &Limit::names())?;
     let rules = section(&data, "rules", &DEFAULT_RULES.map(|(rule, _)| rule))?;
     let gate = section(&data, "gate", &GATE_KEYS)?;
     let boundaries = match given(&data, "boundaries") {
@@ -265,7 +265,8 @@ fn relaxed(value: &Value) -> Result<Vec<String>> {
 }
 
 fn validate_limits(config: &mut Config, given: &[(&str, &Value)]) -> Result<()> {
-    for name in Limits::NAMES {
+    for limit in Limit::ALL {
+        let name = limit.name();
         let Some((_, value)) = given.iter().find(|(key, _)| *key == name) else {
             continue;
         };
@@ -275,13 +276,7 @@ fn validate_limits(config: &mut Config, given: &[(&str, &Value)]) -> Result<()> 
         expect(*number >= 0, || {
             format!("limits.{name} must be a whole number")
         })?;
-        let limits = &mut config.limits;
-        *match name {
-            "cognitive" => &mut limits.cognitive,
-            "cyclomatic" => &mut limits.cyclomatic,
-            "comment-lines" => &mut limits.comment_lines,
-            _ => &mut limits.inputs,
-        } = *number;
+        config.limits.set(limit, *number);
     }
     Ok(())
 }
@@ -319,39 +314,57 @@ fn validate_gate(config: &mut Config, given: &[(&str, &Value)]) -> Result<()> {
     .into_iter()
     .chain([("analyzer", &mut gate.analyzer)])
     {
-        match value(key) {
-            None => {}
-            Some(Value::Bool(setting)) => *flag = *setting,
-            Some(_) => return Err(fail(format!("gate.{key} must be true or false"))),
+        if let Some(setting) = value(key) {
+            *flag = gate_flag(setting, key)?;
         }
     }
     if let Some(jobs) = value("jobs") {
-        gate.jobs = match jobs {
-            Value::Str(text) if text == AUTO => Jobs::Auto,
-            _ => Jobs::Count(whole_count(jobs).ok_or_else(|| {
-                fail(format!(
-                    "gate.jobs must be a whole number of at least 1, or {AUTO}"
-                ))
-            })?),
-        };
+        gate.jobs = gate_jobs(jobs)?;
     }
     if let Some(steps) = value("steps") {
         gate.steps = string_list(steps, "gate.steps")?;
     }
     if let Some(tests) = value("tests") {
-        let Value::Seq(entries) = tests else {
-            return Err(fail("gate.tests must be a list"));
-        };
-        gate.tests = entries.iter().map(script_entry).collect::<Result<_>>()?;
+        gate.tests = gate_tests(tests)?;
     }
     if let Some(smoke) = value("smoke") {
-        gate.smoke = match smoke {
-            Value::Bool(false) => Vec::new(),
-            Value::Seq(arguments) => arguments.iter().map(Value::py_str).collect(),
-            _ => return Err(fail("gate.smoke must be a list of arguments or false")),
-        };
+        gate.smoke = gate_smoke(smoke)?;
     }
     Ok(())
+}
+
+fn gate_flag(value: &Value, key: &str) -> Result<bool> {
+    match value {
+        Value::Bool(setting) => Ok(*setting),
+        _ => Err(fail(format!("gate.{key} must be true or false"))),
+    }
+}
+
+fn gate_jobs(value: &Value) -> Result<Jobs> {
+    if matches!(value, Value::Str(text) if text == AUTO) {
+        return Ok(Jobs::Auto);
+    }
+    let count = whole_count(value).ok_or_else(|| {
+        fail(format!(
+            "gate.jobs must be a whole number of at least 1, or {AUTO}"
+        ))
+    })?;
+    Ok(Jobs::Count(count))
+}
+
+fn gate_tests(value: &Value) -> Result<Vec<TestScript>> {
+    let Value::Seq(entries) = value else {
+        return Err(fail("gate.tests must be a list"));
+    };
+    entries.iter().map(script_entry).collect()
+}
+
+fn gate_smoke(value: &Value) -> Result<Vec<String>> {
+    match value {
+        Value::Bool(false) => Ok(Vec::new()),
+        Value::Seq(arguments) => Ok(arguments.iter().map(Value::py_str).collect()),
+        _ => Err(fail("gate.smoke must be a list of arguments or false")),
+    }
 }
 
 /// A `gate.tests` entry: a script path, or a mapping with `script` and an optional `shards` count.
