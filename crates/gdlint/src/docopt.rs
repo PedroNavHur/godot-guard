@@ -137,47 +137,53 @@ fn match_usage(items: Vec<Item>) -> Command {
             Item::Option(..) => None,
         })
         .collect();
-    let mut lint_left: Vec<Item> = items
+    let lint_outcome = (!paths.is_empty()).then(|| lint_left(&items));
+    let dump_outcome = dump_left(&items);
+    let (command, left) = match (lint_outcome, dump_outcome) {
+        (Some((lint, _)), Some(dump)) if dump.len() < lint.len() => (Command::Dump, dump),
+        (Some((lint, verbose)), _) => (Command::Lint { paths, verbose }, lint),
+        (None, Some(dump)) => (Command::Dump, dump),
+        (None, None) => return usage_with(""),
+    };
+    if left.is_empty() {
+        return command;
+    }
+    let reprs: Vec<String> = left.iter().map(Item::repr).collect();
+    usage_with(&format!(
+        "Warning: found unmatched (duplicate?) arguments [{}]",
+        reprs.join(", ")
+    ))
+}
+
+/// The options left once the lint line has taken `--verbose`, `--help` and `--version`, and whether
+/// `--verbose` was among them.
+fn lint_left(items: &[Item]) -> (Vec<Item>, bool) {
+    let mut left: Vec<Item> = items
         .iter()
         .filter(|item| matches!(item, Item::Option(..)))
         .cloned()
         .collect();
     let mut verbose = false;
     for name in ["--verbose", "--help", "--version"] {
-        if let Some(position) = lint_left
+        if let Some(position) = left
             .iter()
             .position(|item| item.option_name() == Some(name))
         {
-            lint_left.remove(position);
+            left.remove(position);
             verbose |= name == "--verbose";
         }
     }
-    let dump_left = items
+    (left, verbose)
+}
+
+/// The items left once the dump line has taken `--dump-default-config`, if it is there.
+fn dump_left(items: &[Item]) -> Option<Vec<Item>> {
+    let position = items
         .iter()
-        .position(|item| item.option_name() == Some("--dump-default-config"))
-        .map(|position| {
-            let mut left = items.clone();
-            left.remove(position);
-            left
-        });
-    let lint_outcome = (!paths.is_empty()).then_some(lint_left);
-    let best = match (lint_outcome, dump_left) {
-        (Some(lint), Some(dump)) if dump.len() < lint.len() => (false, dump),
-        (Some(lint), _) => (true, lint),
-        (None, Some(dump)) => (false, dump),
-        (None, None) => return usage_with(""),
-    };
-    match best {
-        (_, left) if !left.is_empty() => {
-            let reprs: Vec<String> = left.iter().map(Item::repr).collect();
-            usage_with(&format!(
-                "Warning: found unmatched (duplicate?) arguments [{}]",
-                reprs.join(", ")
-            ))
-        }
-        (true, _) => Command::Lint { paths, verbose },
-        (false, _) => Command::Dump,
-    }
+        .position(|item| item.option_name() == Some("--dump-default-config"))?;
+    let mut left = items.to_vec();
+    left.remove(position);
+    Some(left)
 }
 
 /// `parse_argv`, without `options_first` or `more_magic`, as gdlint calls it.
@@ -208,7 +214,7 @@ fn parse_argv(argv: &[String]) -> Result<Vec<Item>, String> {
 
 /// Whether `token` is `-` followed by short options, not `-`, a negative number or a long option.
 fn is_short_cluster(token: &str) -> bool {
-    token.starts_with('-') && token != "-" && !is_a_number(token)
+    token.starts_with('-') && !token.starts_with("--") && token != "-" && !is_a_number(token)
 }
 
 /// The `-x` items of a cluster like `-dv`.
@@ -240,26 +246,44 @@ fn parse_longer<'a>(
         similar = options.iter().filter(is_prefix).cloned().collect();
     }
     let Some(found) = similar.first().cloned() else {
-        let argcount = usize::from(has_eq);
-        options.push(Opt::new(None, Some(longer), argcount));
-        let value = match (argcount, given) {
-            (1, Some(value)) => OptionValue::Text(value),
-            _ => OptionValue::True,
-        };
-        return Ok((Opt::new(None, Some(longer), argcount), value));
+        return Ok(unknown_long(options, longer, has_eq, given));
     };
-    let name = found.longer.clone().unwrap_or_default();
-    let value = match (found.argcount, given) {
-        (0, Some(_)) => return Err(format!("{name} must not have an argument")),
-        (0, None) => OptionValue::True,
-        (_, Some(value)) => OptionValue::Text(value),
-        (_, None) => match tokens.peek() {
-            None => return Err(format!("{name} requires argument")),
-            Some(next) if next.as_str() == "--" => return Err(format!("{name} requires argument")),
-            Some(_) => OptionValue::Text(tokens.next().expect("peeked").clone()),
-        },
-    };
+    let value = long_value(&found, given, tokens)?;
     Ok((found, value))
+}
+
+/// A long option docopt has not seen: it takes an argument only if the token had an `=`.
+fn unknown_long(
+    options: &mut Vec<Opt>,
+    longer: &str,
+    has_eq: bool,
+    given: Option<String>,
+) -> (Opt, OptionValue) {
+    let argcount = usize::from(has_eq);
+    options.push(Opt::new(None, Some(longer), argcount));
+    let value = match (argcount, given) {
+        (1, Some(value)) => OptionValue::Text(value),
+        _ => OptionValue::True,
+    };
+    (Opt::new(None, Some(longer), argcount), value)
+}
+
+/// The value of a known long option: after `=`, or the next token unless that is `--`.
+fn long_value<'a>(
+    found: &Opt,
+    given: Option<String>,
+    tokens: &mut std::iter::Peekable<impl Iterator<Item = &'a String>>,
+) -> Result<OptionValue, String> {
+    let name = found.longer.clone().unwrap_or_default();
+    match (found.argcount, given) {
+        (0, Some(_)) => Err(format!("{name} must not have an argument")),
+        (0, None) => Ok(OptionValue::True),
+        (_, Some(value)) => Ok(OptionValue::Text(value)),
+        (_, None) => match tokens.next_if(|next| next.as_str() != "--") {
+            Some(next) => Ok(OptionValue::Text(next.clone())),
+            None => Err(format!("{name} requires argument")),
+        },
+    }
 }
 
 /// One `-x` of a cluster. gdlint has no short option that takes an argument.
@@ -339,5 +363,13 @@ mod tests {
         assert_eq!(run(&["--verb", "ok.gd"]), lint(&["ok.gd"], true));
         assert_eq!(run(&["--", "-x.gd"]), lint(&["--", "-x.gd"], false));
         assert_eq!(run(&["-", "-1", "-1e3"]), lint(&["-", "-1", "-1e3"], false));
+    }
+
+    #[test]
+    fn only_dash_letters_make_a_short_cluster() {
+        assert!(is_short_cluster("-dv"));
+        for token in ["-", "--", "--verbose", "-1", "-1e3", "ok.gd"] {
+            assert!(!is_short_cluster(token), "{token}");
+        }
     }
 }

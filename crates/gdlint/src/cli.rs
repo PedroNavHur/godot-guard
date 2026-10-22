@@ -219,31 +219,41 @@ pub fn find_gd_files_from_paths(
 }
 
 fn walk(top: &str, excluded_directories: &[String], cwd: &Path, files: &mut Vec<String>) {
-    // `os.walk` without `onerror` skips a directory it cannot list.
-    let Ok(entries) = std::fs::read_dir(cwd.join(top)) else {
+    let Some((dirnames, gd_files)) = scandir(top, cwd) else {
         return;
     };
+    files.extend(gd_files);
+    for dirname in dirnames
+        .iter()
+        .filter(|d| !excluded_directories.contains(d))
+    {
+        let new_path = join(top, dirname);
+        if !is_symlink(&cwd.join(&new_path)) {
+            walk(&new_path, excluded_directories, cwd, files);
+        }
+    }
+}
+
+/// The subdirectory names of `top` and its `.gd` files as paths from `top`; None when it cannot be listed,
+/// as `os.walk` without `onerror` skips it.
+fn scandir(top: &str, cwd: &Path) -> Option<(Vec<String>, Vec<String>)> {
+    let entries = std::fs::read_dir(cwd.join(top)).ok()?;
     let mut dirnames = Vec::new();
+    let mut gd_files = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         // `DirEntry.is_dir()` follows symlinks, as `os.scandir`'s does.
         if entry.path().is_dir() {
             dirnames.push(name);
         } else if name.ends_with(".gd") {
-            files.push(join(top, &name));
+            gd_files.push(join(top, &name));
         }
     }
-    for dirname in dirnames
-        .iter()
-        .filter(|d| !excluded_directories.contains(d))
-    {
-        let new_path = join(top, dirname);
-        let is_link = std::fs::symlink_metadata(cwd.join(&new_path))
-            .is_ok_and(|m| m.file_type().is_symlink());
-        if !is_link {
-            walk(&new_path, excluded_directories, cwd, files);
-        }
-    }
+    Some((dirnames, gd_files))
+}
+
+fn is_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
 }
 
 /// `os.path.join(a, b)` for a relative `b`.

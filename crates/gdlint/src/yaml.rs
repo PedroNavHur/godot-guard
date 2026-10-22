@@ -139,7 +139,7 @@ impl Builder {
 /// `value` as a mapping key; merge keys and unhashable values are refused.
 fn mapping_key(value: Value) -> Result<Value, YamlError> {
     if value == Value::Str("<<".into()) {
-        return error("merge keys (<<) are not supported in a gdlint config");
+        return error("merge keys (<<) are not supported");
     }
     if matches!(value, Value::List(_) | Value::Dict(_) | Value::Set(_)) {
         return error("found unhashable key");
@@ -164,7 +164,7 @@ fn collection_tag(tag: Option<&Tag>, kind: &str) -> Result<bool, YamlError> {
     if tag.handle.is_empty() && tag.suffix == "!" {
         return Ok(false);
     }
-    error(format!("unsupported tag {tag} in a gdlint config"))
+    error(format!("unsupported tag {tag}"))
 }
 
 fn scalar(text: &str, style: ScalarStyle, tag: Option<&Tag>) -> Result<Value, YamlError> {
@@ -173,7 +173,7 @@ fn scalar(text: &str, style: ScalarStyle, tag: Option<&Tag>) -> Result<Value, Ya
         None => "str",
         Some(tag) if tag.handle.is_empty() && tag.suffix == "!" => "str",
         Some(tag) if tag.is_yaml_core_schema() => tag.suffix.as_str(),
-        Some(tag) => return error(format!("unsupported tag {tag} in a gdlint config")),
+        Some(tag) => return error(format!("unsupported tag {tag}")),
     };
     match kind {
         "str" => Ok(Value::Str(text.to_owned())),
@@ -181,9 +181,7 @@ fn scalar(text: &str, style: ScalarStyle, tag: Option<&Tag>) -> Result<Value, Ya
         "bool" => construct_bool(text),
         "int" => construct_int(text).map(Value::Int),
         "float" => construct_float(text).map(Value::Float),
-        other => error(format!(
-            "unsupported YAML type !!{other} in a gdlint config"
-        )),
+        other => error(format!("unsupported YAML type !!{other}")),
     }
 }
 
@@ -291,6 +289,19 @@ mod tests {
 
     fn one(text: &str) -> Value {
         load(text).expect("loads").expect("a document")
+    }
+
+    #[test]
+    fn refusals_do_not_name_a_tool() {
+        for text in [
+            "<<: {a: 1}\n",
+            "a: !custom 1\n",
+            "a: !!binary x\n",
+            "!custom {a: 1}\n",
+        ] {
+            let message = load(text).expect_err(text).to_string();
+            assert!(!message.contains("gdlint"), "{message}");
+        }
     }
 
     #[test]

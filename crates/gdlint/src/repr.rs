@@ -12,23 +12,28 @@ pub fn str_repr(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push(quote);
     for c in text.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c == quote => {
-                out.push('\\');
-                out.push(c);
-            }
-            c if is_printable(c) => out.push(c),
-            c if (c as u32) < 0x100 => out.push_str(&format!("\\x{:02x}", c as u32)),
-            c if (c as u32) < 0x10000 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push_str(&format!("\\U{:08x}", c as u32)),
-        }
+        push_escaped(&mut out, c, quote);
     }
     out.push(quote);
     out
+}
+
+/// One character of a `str` repr quoted with `quote`.
+fn push_escaped(out: &mut String, c: char, quote: char) {
+    match c {
+        '\\' => out.push_str("\\\\"),
+        '\n' => out.push_str("\\n"),
+        '\r' => out.push_str("\\r"),
+        '\t' => out.push_str("\\t"),
+        c if c == quote => {
+            out.push('\\');
+            out.push(c);
+        }
+        c if is_printable(c) => out.push(c),
+        c if (c as u32) < 0x100 => out.push_str(&format!("\\x{:02x}", c as u32)),
+        c if (c as u32) < 0x10000 => out.push_str(&format!("\\u{:04x}", c as u32)),
+        c => out.push_str(&format!("\\U{:08x}", c as u32)),
+    }
 }
 
 /// Approximates `str.isprintable`: control and separator characters other than the space are escaped.

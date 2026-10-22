@@ -216,26 +216,41 @@ fn repeat(chars: &[char], i: usize) -> Result<Option<(String, usize)>, String> {
         return Ok(None);
     };
     let body: String = chars[i + 1..close].iter().collect();
-    let (low, high) = match body.split_once(',') {
-        Some((low, high)) => (low, Some(high)),
-        None => (body.as_str(), None),
-    };
-    let is_number = |s: &str| s.chars().all(|c| c.is_ascii_digit());
-    if !is_number(low) || !high.is_none_or(is_number) || (high.is_none() && low.is_empty()) {
+    let Some((low, high)) = repeat_bounds(&body) else {
         return Ok(None);
-    }
+    };
     let low = if low.is_empty() { "0" } else { low };
-    if let Some(high) = high.filter(|h| !h.is_empty())
-        && high.parse::<u64>().map_err(|e| e.to_string())?
-            < low.parse::<u64>().map_err(|e| e.to_string())?
-    {
-        return Err("min repeat greater than max repeat".into());
-    }
+    check_bounds(low, high)?;
     let text = match high {
         None => format!("{{{low}}}"),
         Some(high) => format!("{{{low},{high}}}"),
     };
     Ok(Some((text, close + 1)))
+}
+
+/// The bounds inside `{...}`; None when Python reads the `{` as a literal because they are not numbers.
+fn repeat_bounds(body: &str) -> Option<(&str, Option<&str>)> {
+    let (low, high) = match body.split_once(',') {
+        Some((low, high)) => (low, Some(high)),
+        None => (body, None),
+    };
+    let is_number = |s: &str| s.chars().all(|c| c.is_ascii_digit());
+    if !is_number(low) || !high.is_none_or(is_number) || (high.is_none() && low.is_empty()) {
+        return None;
+    }
+    Some((low, high))
+}
+
+/// Python's `min repeat greater than max repeat` error for bounds that `repeat_bounds` accepted.
+fn check_bounds(low: &str, high: Option<&str>) -> Result<(), String> {
+    let Some(high) = high.filter(|h| !h.is_empty()) else {
+        return Ok(());
+    };
+    let parse = |digits: &str| digits.parse::<u64>().map_err(|e| e.to_string());
+    if parse(high)? < parse(low)? {
+        return Err("min repeat greater than max repeat".into());
+    }
+    Ok(())
 }
 
 /// The group opening at `chars[i]`.

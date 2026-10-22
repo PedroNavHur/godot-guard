@@ -86,6 +86,13 @@ fn fetch_problem_inactivity_lines(gdscript_code: &str) -> HashMap<String, HashSe
 /// `_fetch_problem_inactivity_ranges`: each disable runs to the end of the file, cut short by the earliest
 /// enable of that problem anywhere in the file, before or after it, as the Python does.
 fn fetch_problem_inactivity_ranges(lines: &[&str]) -> HashMap<String, Vec<(usize, usize)>> {
+    let mut ranges = disabled_ranges(lines);
+    cut_at_enables(&mut ranges, lines);
+    ranges
+}
+
+/// Each problem's ranges from a disable directive to the end of the file.
+fn disabled_ranges(lines: &[&str]) -> HashMap<String, Vec<(usize, usize)>> {
     let last_line_no = lines.len();
     let mut ranges: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
     for (line_no, problems) in directives(lines, Directive::Disable) {
@@ -99,6 +106,11 @@ fn fetch_problem_inactivity_ranges(lines: &[&str]) -> HashMap<String, Vec<(usize
                 .push((begin, last_line_no));
         }
     }
+    ranges
+}
+
+/// Ends every range of a problem no later than the line of that problem's earliest enable.
+fn cut_at_enables(ranges: &mut HashMap<String, Vec<(usize, usize)>>, lines: &[&str]) {
     for (line_no, problems) in directives(lines, Directive::Enable) {
         for problem in problems {
             for range in ranges.entry(problem).or_default() {
@@ -106,7 +118,6 @@ fn fetch_problem_inactivity_ranges(lines: &[&str]) -> HashMap<String, Vec<(usize
             }
         }
     }
-    ranges
 }
 
 #[derive(Clone, Copy)]
