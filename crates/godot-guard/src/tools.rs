@@ -325,7 +325,8 @@ pub fn run_godot(
     })
 }
 
-/// Lines of `reader` for tests: what a child's output becomes once read as text.
+/// Lines of `reader` as a child's output becomes once read as text; captured in-process gdformat and
+/// gdlint output is echoed through it.
 pub fn read_lines(reader: impl Read) -> Vec<String> {
     let mut lines = Vec::new();
     echo_lines(reader, &mut |line: &str| lines.push(line.to_owned()))

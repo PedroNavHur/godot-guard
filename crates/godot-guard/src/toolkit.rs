@@ -25,15 +25,25 @@ impl Write for Merged<'_> {
     }
 }
 
+/// A closed pipe is not a crash: the reader went away, so the command's status is 1, as gdformat's
+/// binary exits, and `tools::write_stdout` drops the same error.
+fn excuse_closed_pipe(result: io::Result<i32>) -> io::Result<i32> {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(1),
+        other => other,
+    }
+}
+
 /// Run `command` on (stdout, stderr), merged into `echo` line by line when there is one. A write it
-/// fails, or the terminal's final flush failing for any reason but a closed pipe, is the error.
+/// fails, or the terminal's final flush failing, is the error, except for a closed pipe, which
+/// is status 1 without a crash message.
 fn streams(
     echo: Option<Echo>,
     command: impl FnOnce(&mut dyn Write, &mut dyn Write) -> io::Result<i32>,
 ) -> io::Result<i32> {
     let Some(echo) = echo else {
         let (mut out, mut err) = (io::stdout().lock(), io::stderr().lock());
-        let result = command(&mut out, &mut err);
+        let result = excuse_closed_pipe(command(&mut out, &mut err));
         return match out.flush() {
             Err(error) if error.kind() != io::ErrorKind::BrokenPipe => Err(error),
             _ => result,
@@ -72,4 +82,22 @@ pub fn gdformat(args: &[String], root: &Path, echo: Option<Echo>) -> Result<i32>
         )
     })
     .map_err(|e| Failure::crash("writing gdformat's output", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_closed_pipe_is_status_1_not_an_error() {
+        let result = excuse_closed_pipe(Err(io::ErrorKind::BrokenPipe.into()));
+        assert_eq!(result.unwrap(), 1);
+    }
+
+    #[test]
+    fn other_errors_and_statuses_pass_through() {
+        let denied = excuse_closed_pipe(Err(io::ErrorKind::PermissionDenied.into()));
+        assert_eq!(denied.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(excuse_closed_pipe(Ok(2)).unwrap(), 2);
+    }
 }
