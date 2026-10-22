@@ -8,8 +8,8 @@
 
 use gdscript::{ErrorKind, ParseError};
 
-use crate::repr::str_repr;
-use crate::text::python_strip;
+use pycompat::builtins::repr;
+use pycompat::string::strip;
 
 /// The report for `error`, raised parsing `code`, or Err with the line Python's traceback would end on, for
 /// the indenter's errors gdlint does not catch.
@@ -27,13 +27,13 @@ pub fn report(error: &ParseError, code: &str) -> Result<String, String> {
             };
             let message = format!(
                 "Unexpected token Token({}, {}) at line {line}, column {column}.\nExpected one of: \n\t* {}\n",
-                str_repr(token),
-                str_repr(value),
+                repr(token),
+                repr(value),
                 expected.join("\n\t* ")
             );
             Ok(match position {
                 Some((line, column)) => format!("{}\n{message}", context(code, line, column)),
-                None => python_strip(&message).to_owned(),
+                None => strip(&message).to_owned(),
             })
         }
         ErrorKind::UnexpectedCharacters { character } => {
@@ -42,7 +42,7 @@ pub fn report(error: &ParseError, code: &str) -> Result<String, String> {
                 "No terminal matches '{character}' in the current parser context, at line {line} col {column}\n\n{}",
                 context(code, line, column)
             );
-            Ok(python_strip(&message).to_owned())
+            Ok(strip(&message).to_owned())
         }
         ErrorKind::Dedent { .. } => Ok(error.to_string()),
         ErrorKind::Indenter(what) => Err((*what).to_owned()),

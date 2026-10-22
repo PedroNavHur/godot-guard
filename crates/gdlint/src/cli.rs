@@ -8,13 +8,15 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use gdscript::{ParseError, Tree};
+use pycompat::builtins::{ReadError, path_under, read_text, repr};
+use pycompat::os::strerror;
+use pycompat::utils::find_gd_files_from_paths;
+use pycompat::yaml::{Value, value_repr};
 
 use crate::config::{self, CONFIG_FILE_NAME, Config, ConfigError};
 use crate::docopt::{self, Command};
 use crate::parse_error;
 use crate::problem::Printed;
-use crate::repr::{str_repr, value_repr};
-use crate::yaml::Value;
 
 /// A parser, `gdscript::parse` outside tests: the file's tree, or why gdtoolkit cannot parse it.
 pub type Parse<'a> = dyn Fn(&str) -> Result<Tree, ParseError> + Sync + 'a;
@@ -31,7 +33,7 @@ fn load_config_logged(cwd: &Path, log: &mut dyn FnMut(String)) -> Result<Config,
         log("No 'gdlintrc' nor '.gdlintrc' found. Using default config...".into());
         log("Loaded config:".into());
         for (key, value) in config::default_entries() {
-            log(format!("({}, {})", str_repr(key), value_repr(&value)));
+            log(format!("({}, {})", repr(key), value_repr(&value)));
         }
         return Ok(Config::defaults());
     };
@@ -49,21 +51,12 @@ fn load_config_logged(cwd: &Path, log: &mut dyn FnMut(String)) -> Result<Config,
             .iter()
             .any(|(k, _)| *k == Value::Str(key.to_owned()))
         {
-            let entry = format!("({}, {})", str_repr(key), value_repr(&value));
+            let entry = format!("({}, {})", repr(key), value_repr(&value));
             log(format!("Adding missing entry from defaults: {entry}"));
         }
     }
     Config::from_entries(config::string_keyed(&entries))
         .map_err(|e| ConfigError(format!("{shown}: {e}")))
-}
-
-/// The text Python puts in `OSError.strerror`: the C library's message, without Rust's "(os error N)".
-pub fn strerror(error: &io::Error) -> String {
-    let text = error.to_string();
-    match text.rfind(" (os error ") {
-        Some(end) => text[..end].to_owned(),
-        None => text,
-    }
 }
 
 /// `main()`, for `argv` without the program name, run in `cwd`.
@@ -166,16 +159,16 @@ fn lint_file(
     parse: &Parse,
     err: &mut dyn Write,
 ) -> io::Result<Option<usize>> {
-    let content = match crate::read_source(&cwd.join(file_path)) {
-        Ok(Ok(content)) => content,
-        Ok(Err(utf8)) => {
+    let content = match read_text(&path_under(cwd, file_path)) {
+        Ok(content) => content,
+        Err(ReadError::Utf8(utf8)) => {
             writeln!(
                 err,
                 "{file_path}: UnicodeDecodeError: 'utf-8' codec can't decode the file: {utf8}"
             )?;
             return Ok(None);
         }
-        Err(error) => {
+        Err(ReadError::Io(error)) => {
             writeln!(err, "Cannot open file '{file_path}': {}", strerror(&error))?;
             return Ok(Some(1));
         }
@@ -198,69 +191,4 @@ fn lint_file(
         writeln!(err, "{}", Printed { problem, file_path })?;
     }
     Ok(Some(problems.len()))
-}
-
-/// `find_gd_files_from_paths`: each path that is a directory, walked as `os.walk` walks it, top-down, in
-/// directory-listing order, not into symlinked or excluded directories; any other path as given.
-pub fn find_gd_files_from_paths(
-    paths: &[String],
-    excluded_directories: &[String],
-    cwd: &Path,
-) -> Vec<String> {
-    let mut files = Vec::new();
-    for path in paths {
-        if !path.is_empty() && cwd.join(path).is_dir() {
-            walk(path, excluded_directories, cwd, &mut files);
-        } else {
-            files.push(path.clone());
-        }
-    }
-    files
-}
-
-fn walk(top: &str, excluded_directories: &[String], cwd: &Path, files: &mut Vec<String>) {
-    let Some((dirnames, gd_files)) = scandir(top, cwd) else {
-        return;
-    };
-    files.extend(gd_files);
-    for dirname in dirnames
-        .iter()
-        .filter(|d| !excluded_directories.contains(d))
-    {
-        let new_path = join(top, dirname);
-        if !is_symlink(&cwd.join(&new_path)) {
-            walk(&new_path, excluded_directories, cwd, files);
-        }
-    }
-}
-
-/// The subdirectory names of `top` and its `.gd` files as paths from `top`; None when it cannot be listed,
-/// as `os.walk` without `onerror` skips it.
-fn scandir(top: &str, cwd: &Path) -> Option<(Vec<String>, Vec<String>)> {
-    let entries = std::fs::read_dir(cwd.join(top)).ok()?;
-    let mut dirnames = Vec::new();
-    let mut gd_files = Vec::new();
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        // `Path::is_dir` follows symlinks, as Python's `DirEntry.is_dir()` does.
-        if entry.path().is_dir() {
-            dirnames.push(name);
-        } else if name.ends_with(".gd") {
-            gd_files.push(join(top, &name));
-        }
-    }
-    Some((dirnames, gd_files))
-}
-
-fn is_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
-}
-
-/// `os.path.join(a, b)` for a relative `b`.
-fn join(a: &str, b: &str) -> String {
-    if a.is_empty() || a.ends_with('/') {
-        format!("{a}{b}")
-    } else {
-        format!("{a}/{b}")
-    }
 }

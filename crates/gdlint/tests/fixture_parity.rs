@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use gdscript::Tree;
 use gdscript::oracle::{Dump, read_line};
+use pycompat::builtins::read_text;
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lint")
@@ -21,9 +22,7 @@ fn trees() -> HashMap<String, Tree> {
             let Dump::Parsed { path, tree, .. } = read_line(line).expect("dump line") else {
                 panic!("a fixture the oracle rejects: {line}");
             };
-            let source = gdlint::read_source(&fixtures().join(path))
-                .expect("read")
-                .expect("UTF-8");
+            let source = read_text(&fixtures().join(path)).expect("a UTF-8 file");
             trees.insert(source, tree);
         }
     }

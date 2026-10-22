@@ -10,7 +10,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::pyre::FullMatch;
-use crate::yaml::{self, Value};
+use pycompat::yaml::{self, Value, value_repr};
 
 const PASCAL_CASE: &str = "([A-Z][a-z0-9]*)+";
 const SNAKE_CASE: &str = "[a-z][a-z0-9]*(_[a-z0-9]+)*";
@@ -302,7 +302,7 @@ fn excluded_directories(value: &Value) -> Result<Vec<String>, ConfigError> {
 fn type_error(key: &str, expected: &str, found: &Value) -> ConfigError {
     ConfigError(format!(
         "config entry {key:?} must be {expected}, not {}",
-        crate::repr::value_repr(found)
+        value_repr(found)
     ))
 }
 
@@ -329,7 +329,7 @@ pub fn parse_entries(text: &str) -> Result<Vec<(Value, Value)>, ConfigError> {
         None => Err(ConfigError("the config file is empty".into())),
         Some(other) => Err(ConfigError(format!(
             "the config file must hold a mapping, not {}",
-            crate::repr::value_repr(&other)
+            value_repr(&other)
         ))),
     }
 }

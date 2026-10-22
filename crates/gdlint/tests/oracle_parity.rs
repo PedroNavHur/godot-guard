@@ -13,6 +13,8 @@ use std::time::Instant;
 use gdlint::cli;
 use gdscript::oracle::{Dump, read_line};
 use gdscript::{ParseError, Tree};
+use pycompat::builtins::read_text;
+use pycompat::utils::find_gd_files_from_paths;
 
 struct Corpus {
     root: PathBuf,
@@ -67,7 +69,7 @@ fn oracle_trees(
     args: &[String],
 ) -> (HashMap<String, Tree>, usize, usize) {
     let config = cli::load_config(cwd).expect("config loads");
-    let files = cli::find_gd_files_from_paths(args, &config.excluded_directories, cwd);
+    let files = find_gd_files_from_paths(args, &config.excluded_directories, cwd);
     let files: Vec<&String> = files.iter().filter(|f| cwd.join(f).is_file()).collect();
     let (mut trees, mut rejected) = (HashMap::new(), 0);
     if files.is_empty() {
@@ -92,9 +94,7 @@ fn oracle_trees(
             rejected += 1;
             continue;
         };
-        let source = gdlint::read_source(&cwd.join(&path))
-            .expect("read")
-            .expect("UTF-8");
+        let source = read_text(&cwd.join(&path)).expect("a UTF-8 file");
         trees.insert(source, tree);
     }
     (trees, rejected, files.len())

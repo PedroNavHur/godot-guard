@@ -3,22 +3,20 @@
 //! on one thread, reading every file, parsing it with `gdscript::parse`, and linting it and formatting its
 //! problems.
 
+use pycompat::builtins::read_text;
+use pycompat::utils::find_gd_files_from_paths;
 use std::time::{Duration, Instant};
 
 fn main() {
     let paths: Vec<String> = std::env::args().skip(1).collect();
     let cwd = std::env::current_dir().expect("cwd");
     let config = gdlint::cli::load_config(&cwd).expect("config");
-    let files = gdlint::cli::find_gd_files_from_paths(&paths, &config.excluded_directories, &cwd);
+    let files = find_gd_files_from_paths(&paths, &config.excluded_directories, &cwd);
 
     let started = Instant::now();
     let sources: Vec<String> = files
         .iter()
-        .map(|path| {
-            gdlint::read_source(&cwd.join(path))
-                .expect("read")
-                .expect("UTF-8")
-        })
+        .map(|path| read_text(&cwd.join(path)).expect("a UTF-8 file"))
         .collect();
     let read = started.elapsed();
 

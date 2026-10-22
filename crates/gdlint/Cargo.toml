@@ -7,8 +7,8 @@ rust-version.workspace = true
 
 [dependencies]
 gdscript = { path = "../gdscript" }
+pycompat = { path = "../pycompat" }
 regex = "1"
-saphyr-parser = "0.2"
 
 [dev-dependencies]
 gdscript = { path = "../gdscript", features = ["oracle"] }

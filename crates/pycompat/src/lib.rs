@@ -8,3 +8,4 @@ pub mod builtins;
 pub mod os;
 pub mod string;
 pub mod utils;
+pub mod yaml;

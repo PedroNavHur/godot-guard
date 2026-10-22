@@ -6,7 +6,6 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-gdlint = { path = "../gdlint" }
 gdscript = { path = "../gdscript" }
 pycompat = { path = "../pycompat" }
 

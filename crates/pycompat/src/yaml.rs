@@ -1,5 +1,5 @@
-//! Config loading for gdlint (`.gdlintrc`) and gdformat (`gdformatrc`): `yaml.load(text, Loader=yaml.Loader)`
-//! as PyYAML 6 does it, for the values a config holds.
+//! `yaml.load(text, Loader=yaml.Loader)` as PyYAML 6 does it, for the values gdlint's and gdformat's configs
+//! (`.gdlintrc`, `gdformatrc`) hold, and `repr` of those values.
 //!
 //! saphyr-parser reads the syntax; this module builds the values with PyYAML's YAML 1.1 rules, which differ
 //! from YAML 1.2's: `yes`/`on` are booleans, `017` is octal, `1_000` and `1:30` are integers, and `!!set` makes
@@ -12,7 +12,9 @@ use std::sync::OnceLock;
 use regex::Regex;
 use saphyr_parser::{Event, Parser, ScalarStyle, Tag};
 
-/// A value as PyYAML constructs it, in the Python types that matter to gdlint.
+use crate::builtins::repr;
+
+/// A value as PyYAML constructs it, in the Python types that matter to a config.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Null,
@@ -284,9 +286,71 @@ fn construct_float(text: &str) -> Result<f64, YamlError> {
     Ok(sign * value)
 }
 
+/// `repr(value)` for a value PyYAML built.
+pub fn value_repr(value: &Value) -> String {
+    match value {
+        Value::Null => "None".into(),
+        Value::Bool(true) => "True".into(),
+        Value::Bool(false) => "False".into(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(x) => float_repr(*x),
+        Value::Str(text) => repr(text),
+        Value::List(items) => format!("[{}]", join_repr(items.iter().map(value_repr))),
+        Value::Dict(pairs) => format!(
+            "{{{}}}",
+            join_repr(
+                pairs
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", value_repr(k), value_repr(v)))
+            )
+        ),
+        // Python orders a set by hash, which varies per process for strings; this keeps the document's order.
+        Value::Set(items) if items.is_empty() => "set()".into(),
+        Value::Set(items) => format!("{{{}}}", join_repr(items.iter().map(value_repr))),
+    }
+}
+
+fn float_repr(x: f64) -> String {
+    if x.is_nan() {
+        return "nan".into();
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { "inf".into() } else { "-inf".into() };
+    }
+    let text = format!("{x:?}");
+    // Rust writes 1e300 where Python writes 1e+300.
+    match text.split_once('e') {
+        Some((mantissa, exponent)) if !exponent.starts_with('-') => {
+            format!("{mantissa}e+{exponent}")
+        }
+        _ => text,
+    }
+}
+
+fn join_repr(parts: impl Iterator<Item = String>) -> String {
+    parts.collect::<Vec<_>>().join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn values_print_like_python() {
+        let list = Value::List(vec![
+            Value::Str("a".into()),
+            Value::Null,
+            Value::Int(3),
+            Value::Bool(true),
+        ]);
+        assert_eq!(value_repr(&list), "['a', None, 3, True]");
+        assert_eq!(
+            value_repr(&Value::Set(vec![Value::Str(".git".into())])),
+            "{'.git'}"
+        );
+        assert_eq!(value_repr(&Value::Float(1.0)), "1.0");
+        assert_eq!(value_repr(&Value::Float(1e300)), "1e+300");
+    }
 
     fn one(text: &str) -> Value {
         load(text).expect("loads").expect("a document")

@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use gdlint::yaml::{self, Value};
+use pycompat::yaml::{self, Value};
 
 pub const CONFIG_FILE_NAME: &str = "gdformatrc";
 

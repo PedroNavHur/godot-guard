@@ -11,7 +11,7 @@
 //! including docopt's quirks: `--` is itself a path, long options match by unique prefix, a number such as
 //! `-1` is a path, and a repeated option is an error.
 
-use crate::repr::str_repr;
+use pycompat::builtins::repr;
 
 pub const DOC: &str = "GDScript linter
 
@@ -83,12 +83,12 @@ impl Opt {
 impl Item {
     fn repr(&self) -> String {
         match self {
-            Item::Argument(value) => format!("Argument(None, {})", str_repr(value)),
+            Item::Argument(value) => format!("Argument(None, {})", repr(value)),
             Item::Option(opt, value) => {
-                let text = |s: &Option<String>| s.as_deref().map_or("None".to_owned(), str_repr);
+                let text = |s: &Option<String>| s.as_deref().map_or("None".to_owned(), repr);
                 let value = match value {
                     OptionValue::True => "True".to_owned(),
-                    OptionValue::Text(text) => str_repr(text),
+                    OptionValue::Text(text) => repr(text),
                 };
                 format!(
                     "Option({}, {}, {}, {value})",
@@ -300,7 +300,7 @@ fn parse_short(short: &str, options: &mut Vec<Opt>) -> Item {
 /// Whether Python's `float(text)` accepts it: Rust's float syntax, plus surrounding whitespace and
 /// underscores between digits.
 fn is_a_number(text: &str) -> bool {
-    let trimmed = crate::text::python_strip(text);
+    let trimmed = pycompat::string::strip(text);
     let chars: Vec<char> = trimmed.chars().collect();
     let underscores_ok = chars.iter().enumerate().all(|(i, &c)| {
         c != '_'

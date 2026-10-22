@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::problem::Problem;
-use crate::text::{is_python_space, splitlines};
+use pycompat::string::{is_space, splitlines};
 
 pub fn lint(gdscript_code: &str, config: &Config) -> Vec<Problem> {
     let lines = splitlines(gdscript_code);
@@ -93,7 +93,7 @@ fn line_check(
 
 /// `re.search(r"\s$", line)`; a line from `splitlines` holds no newline for `$` to stop before.
 fn has_trailing_whitespace(line: &str) -> bool {
-    line.chars().next_back().is_some_and(is_python_space)
+    line.chars().next_back().is_some_and(is_space)
 }
 
 /// `re.search("^(\t+ +| +\t+)", line)`.

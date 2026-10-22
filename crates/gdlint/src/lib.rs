@@ -1,13 +1,14 @@
 //! gdlint: the same problems as gdtoolkit 4.5.0's linter, read from a `gdscript::Tree`.
 //!
 //! Library use: load a [`Config`] once ([`Config::defaults`], or [`cli::load_config`] for the `.gdlintrc`
-//! search), then call [`lint_code`] per file with the file's text, as [`read_source`] returns it, and its
-//! parse tree. [`Problem`]s print with [`Printed`].
+//! search), then call [`lint_code`] per file with the file's text, as `pycompat::builtins::read_text`
+//! returns it, and its parse tree. [`Problem`]s print with [`Printed`].
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use gdscript::Tree;
+use pycompat::string;
 use regex::Regex;
 
 pub mod ast;
@@ -25,23 +26,10 @@ mod name_checks;
 mod parse_error;
 mod problem;
 pub mod pyre;
-pub mod repr;
-mod text;
 pub mod utils;
-pub mod yaml;
 
 pub use config::{Config, ConfigError};
 pub use problem::{Printed, Problem};
-pub use text::universal_newlines;
-
-/// A file's text as gdlint reads it, `open(path, encoding="utf-8").read()`: UTF-8 with universal newlines.
-/// The outer error is the open or read failing; the inner one is text that is not UTF-8.
-pub fn read_source(
-    path: &std::path::Path,
-) -> std::io::Result<Result<String, std::string::FromUtf8Error>> {
-    let bytes = std::fs::read(path)?;
-    Ok(String::from_utf8(bytes).map(universal_newlines))
-}
 
 /// `lint_code`: the problems in `gdscript_code`, whose parse tree is `parse_tree`, in gdlint's order.
 pub fn lint_code(gdscript_code: &str, parse_tree: &Tree, config: &Config) -> Vec<Problem> {
@@ -65,7 +53,7 @@ pub fn lint_code(gdscript_code: &str, parse_tree: &Tree, config: &Config) -> Vec
 
 /// Per problem name, the lines where `# gdlint: ignore=` and `# gdlint: disable=`/`enable=` turn it off.
 fn fetch_problem_inactivity_lines(gdscript_code: &str) -> HashMap<String, HashSet<usize>> {
-    let lines = text::splitlines(gdscript_code);
+    let lines = string::splitlines(gdscript_code);
     let mut problem_inactivity_lines: HashMap<String, HashSet<usize>> = HashMap::new();
     for (line_no, problems) in directives(&lines, Directive::Ignore) {
         for problem in problems {
@@ -97,7 +85,7 @@ fn disabled_ranges(lines: &[&str]) -> HashMap<String, Vec<(usize, usize)>> {
     let mut ranges: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
     for (line_no, problems) in directives(lines, Directive::Disable) {
         // A directive after code disables from the next line; one on its own line, from that line.
-        let disable_from_next_line = !text::python_strip(lines[line_no - 1]).starts_with('#');
+        let disable_from_next_line = !string::strip(lines[line_no - 1]).starts_with('#');
         let begin = line_no + usize::from(disable_from_next_line);
         for problem in problems {
             ranges
@@ -144,7 +132,7 @@ fn directives(lines: &[&str], directive: Directive) -> Vec<(usize, Vec<String>)>
         if let Some(captures) = regex.captures(line) {
             let names = captures[1]
                 .split(',')
-                .map(|p| text::python_strip(p).to_owned())
+                .map(|p| string::strip(p).to_owned())
                 .collect();
             found.push((index + 1, names));
         }

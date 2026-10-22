@@ -59,7 +59,7 @@ Allowed deviations:
   still serve 0.4.0.
 
 Config files (`.gdlintrc`, `gdformatrc`) are read by one PyYAML 1.1 port in
-`gdlint::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's
+`pycompat::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's
 `yaml.Loader` adds beyond str, int, float, bool, null, map, seq and set
 (`!!binary`, `!!timestamp`, `!!omap`, `!!pairs`, `!!python/...`); no config in
 the corpus uses them (hexstead's `.gdlintrc` uses `!!set`, which loads).
