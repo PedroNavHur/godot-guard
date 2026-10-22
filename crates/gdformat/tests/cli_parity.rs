@@ -230,38 +230,47 @@ fn cli_matches_gdformat() {
             scenario.stdin,
             &corpus,
         );
-        let stderr_matches = match scenario.parse_error {
-            true => up_to_parse_error(&expected.stderr) == up_to_parse_error(&actual.stderr),
-            // docopt's warning names its internal Option object; the usage after it must match.
-            false if scenario.name == "bogus" => expected
-                .stderr
-                .ends_with(&actual.stderr[actual.stderr.find("Usage:").unwrap()..]),
-            false => expected.stderr == actual.stderr,
-        };
-        let checks = [
-            ("stdout", expected.stdout == actual.stdout),
-            ("stderr", stderr_matches),
-            ("exit status", expected.status == actual.status),
-            ("files", expected.files == actual.files),
-        ];
-        for (what, same) in checks {
-            if !same {
-                failures.push(format!("{}: {what} differs", scenario.name));
-            }
-        }
-        if !checks.iter().all(|(_, same)| *same) {
-            eprintln!(
-                "== {}\noracle {}:\n{}{}\nport {}:\n{}{}",
-                scenario.name,
-                expected.status,
-                expected.stdout,
-                expected.stderr,
-                actual.status,
-                actual.stdout,
-                actual.stderr
-            );
-        }
+        failures.extend(differences(scenario, &expected, &actual));
         eprintln!("{:>14}: exit {}", scenario.name, actual.status);
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+fn stderr_matches(scenario: &Scenario, expected: &Run, actual: &Run) -> bool {
+    match scenario.parse_error {
+        true => up_to_parse_error(&expected.stderr) == up_to_parse_error(&actual.stderr),
+        // docopt's warning names its internal Option object; the usage after it must match.
+        false if scenario.name == "bogus" => expected
+            .stderr
+            .ends_with(&actual.stderr[actual.stderr.find("Usage:").unwrap()..]),
+        false => expected.stderr == actual.stderr,
+    }
+}
+
+/// What differs between the runs, one line each; prints both runs when anything does.
+fn differences(scenario: &Scenario, expected: &Run, actual: &Run) -> Vec<String> {
+    let checks = [
+        ("stdout", expected.stdout == actual.stdout),
+        ("stderr", stderr_matches(scenario, expected, actual)),
+        ("exit status", expected.status == actual.status),
+        ("files", expected.files == actual.files),
+    ];
+    let failed: Vec<String> = checks
+        .iter()
+        .filter(|(_, same)| !same)
+        .map(|(what, _)| format!("{}: {what} differs", scenario.name))
+        .collect();
+    if !failed.is_empty() {
+        eprintln!(
+            "== {}\noracle {}:\n{}{}\nport {}:\n{}{}",
+            scenario.name,
+            expected.status,
+            expected.stdout,
+            expected.stderr,
+            actual.status,
+            actual.stdout,
+            actual.stderr
+        );
+    }
+    failed
 }

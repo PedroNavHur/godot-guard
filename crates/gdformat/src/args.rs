@@ -1,5 +1,7 @@
 //! gdformat's docopt command line, parsed by hand: the same options, long ones abbreviable.
 
+use std::slice::Iter;
+
 use crate::cli::ArgumentsExit;
 
 pub const USAGE: &str = "Usage:\n  gdformat <path>... [options]\n  gdformat --dump-default-config";
@@ -84,8 +86,11 @@ fn takes_value(option: &str) -> bool {
     matches!(option, "--line-length" | "--use-spaces")
 }
 
+/// An option and its value, if it takes one.
+type OptionValue = (&'static str, Option<String>);
+
 /// Every option and its value, if it takes one, then the positional paths.
-type Tokens = (Vec<(&'static str, Option<String>)>, Vec<String>);
+type Tokens = (Vec<OptionValue>, Vec<String>);
 
 fn tokenize(args: &[String]) -> Result<Tokens, ArgumentsExit> {
     let mut options = Vec::new();
@@ -95,44 +100,60 @@ fn tokenize(args: &[String]) -> Result<Tokens, ArgumentsExit> {
         if arg == "--" {
             paths.extend(rest.by_ref().cloned());
         } else if let Some(long) = arg.strip_prefix("--") {
-            let (name, inline_value) = match long.split_once('=') {
-                Some((name, value)) => (name, Some(value.to_owned())),
-                None => (long, None),
-            };
-            let option = long_option(&format!("--{name}"))?;
-            let value = match (takes_value(option), inline_value) {
-                (true, Some(value)) => Some(value),
-                (true, None) => Some(rest.next().cloned().ok_or_else(|| missing(option))?),
-                (false, Some(_)) => {
-                    return Err(ArgumentsExit::Usage(format!(
-                        "{option} must not have an argument\n"
-                    )));
-                }
-                (false, None) => None,
-            };
-            options.push((option, value));
+            options.push(parse_long(long, &mut rest)?);
         } else if arg.len() > 1 && arg.starts_with('-') {
-            for (at, letter) in arg[1..].char_indices() {
-                let option = short_option(letter).ok_or_else(|| {
-                    ArgumentsExit::Usage(format!("-{letter} is not recognized\n"))
-                })?;
-                if !takes_value(option) {
-                    options.push((option, None));
-                    continue;
-                }
-                let attached = &arg[1 + at + letter.len_utf8()..];
-                let value = match attached.is_empty() {
-                    true => rest.next().cloned().ok_or_else(|| missing(option))?,
-                    false => attached.to_owned(),
-                };
-                options.push((option, Some(value)));
-                break;
-            }
+            parse_shorts(arg, &mut rest, &mut options)?;
         } else {
             paths.push(arg.clone());
         }
     }
     Ok((options, paths))
+}
+
+/// The option `--name[=value]` gives (`long` is what follows the dashes); a value it takes and was not
+/// given inline is the next argument.
+fn parse_long(long: &str, rest: &mut Iter<String>) -> Result<OptionValue, ArgumentsExit> {
+    let (name, inline_value) = match long.split_once('=') {
+        Some((name, value)) => (name, Some(value.to_owned())),
+        None => (long, None),
+    };
+    let option = long_option(&format!("--{name}"))?;
+    let value = match (takes_value(option), inline_value) {
+        (true, Some(value)) => Some(value),
+        (true, None) => Some(rest.next().cloned().ok_or_else(|| missing(option))?),
+        (false, Some(_)) => {
+            return Err(ArgumentsExit::Usage(format!(
+                "{option} must not have an argument\n"
+            )));
+        }
+        (false, None) => None,
+    };
+    Ok((option, value))
+}
+
+/// The options of the cluster `arg` (`-cfl80`): the first that takes a value ends it, with the rest of
+/// the cluster as the value, or the next argument when nothing is attached.
+fn parse_shorts(
+    arg: &str,
+    rest: &mut Iter<String>,
+    options: &mut Vec<OptionValue>,
+) -> Result<(), ArgumentsExit> {
+    for (at, letter) in arg[1..].char_indices() {
+        let option = short_option(letter)
+            .ok_or_else(|| ArgumentsExit::Usage(format!("-{letter} is not recognized\n")))?;
+        if !takes_value(option) {
+            options.push((option, None));
+            continue;
+        }
+        let attached = &arg[1 + at + letter.len_utf8()..];
+        let value = match attached.is_empty() {
+            true => rest.next().cloned().ok_or_else(|| missing(option))?,
+            false => attached.to_owned(),
+        };
+        options.push((option, Some(value)));
+        break;
+    }
+    Ok(())
 }
 
 fn missing(option: &str) -> ArgumentsExit {

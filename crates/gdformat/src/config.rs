@@ -2,7 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-use gdlint::repr::value_repr;
 use gdlint::yaml::{self, Value};
 
 pub const CONFIG_FILE_NAME: &str = "gdformatrc";
@@ -82,27 +81,25 @@ fn read_entry(config: &mut Config, name: &str, value: &Value) -> Result<(), Stri
     Ok(())
 }
 
-/// `set(value)` of a list, a set, or a mapping's keys, as `yaml.dump` writes a set.
+/// `set(value)` of a list, a set, or a mapping's keys, as `yaml.dump` writes a set, keeping the strings:
+/// no other scalar equals a directory name, and `set()` raises on a nested collection.
 fn string_set(value: &Value) -> Result<Vec<String>, String> {
     let items: Vec<&Value> = match value {
         Value::List(items) | Value::Set(items) => items.iter().collect(),
         Value::Dict(entries) => entries.iter().map(|(key, _)| key).collect(),
         _ => return Err("excluded_directories is not a list".to_owned()),
     };
-    items
-        .into_iter()
-        .map(|item| {
-            scalar_text(item).ok_or_else(|| "an excluded directory is not a string".to_owned())
-        })
-        .collect()
-}
-
-fn scalar_text(value: &Value) -> Option<String> {
-    match value {
-        Value::Str(text) => Some(text.clone()),
-        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => Some(value_repr(value)),
-        Value::List(_) | Value::Dict(_) | Value::Set(_) => None,
+    let mut names = Vec::new();
+    for item in items {
+        match item {
+            Value::Str(name) => names.push(name.clone()),
+            Value::List(_) | Value::Dict(_) | Value::Set(_) => {
+                return Err("an excluded directory is not a string".to_owned());
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {}
+        }
     }
+    Ok(names)
 }
 
 /// Python's truthiness of a value PyYAML built.
@@ -167,6 +164,13 @@ mod tests {
         assert_eq!(listed.excluded_directories, ["addons", ".git"]);
         let set = parse_config("excluded_directories: !!set\n  addons: null\n").unwrap();
         assert_eq!(set.excluded_directories, ["addons"]);
+    }
+
+    #[test]
+    fn only_string_entries_can_name_an_excluded_directory() {
+        let config = parse_config("excluded_directories: [a, null, 1]\n").unwrap();
+        assert_eq!(config.excluded_directories, ["a"]);
+        assert!(parse_config("excluded_directories: [a, [b]]\n").is_err());
     }
 
     #[test]

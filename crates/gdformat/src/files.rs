@@ -1,6 +1,6 @@
 //! Finding, reading, and naming files as gdformat's Python does.
 
-use std::fs::OpenOptions;
+use std::fs::{DirEntry, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::string::FromUtf8Error;
@@ -32,21 +32,30 @@ fn walk(dir: &str, excluded_directories: &[String], cwd: &Path, files: &mut Vec<
     let mut subdirectories = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        // os.walk follows symlinks to directories when listing, not when descending.
-        let is_dir = entry.path().is_dir();
-        if is_dir {
-            let descend = !excluded_directories.contains(&name)
-                && !entry.file_type().is_ok_and(|kind| kind.is_symlink());
-            if descend {
-                subdirectories.push(name);
-            }
-        } else if name.ends_with(".gd") {
-            files.push(join(dir, &name));
+        if !entry.path().is_dir() {
+            collect_script(dir, &name, files);
+        } else if descends(&entry, &name, excluded_directories) {
+            subdirectories.push(name);
         }
     }
     for subdirectory in subdirectories {
         walk(&join(dir, &subdirectory), excluded_directories, cwd, files);
     }
+}
+
+/// A `.gd` file `name` found in `dir`, as `find_gd_files_from_paths` names it.
+fn collect_script(dir: &str, name: &str, files: &mut Vec<String>) {
+    if name.ends_with(".gd") {
+        files.push(join(dir, name));
+    }
+}
+
+/// Whether `walk` goes into the directory `entry`: `os.walk` lists a symlink to a directory among the
+/// directories but does not descend into it, and the excluded names are pruned.
+fn descends(entry: &DirEntry, name: &str, excluded_directories: &[String]) -> bool {
+    let excluded = excluded_directories.iter().any(|excluded| excluded == name);
+    let symlink = entry.file_type().is_ok_and(|kind| kind.is_symlink());
+    !excluded && !symlink
 }
 
 /// `os.path.join(a, b)` for a relative `b`.

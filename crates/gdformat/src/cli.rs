@@ -276,6 +276,29 @@ const FAILED: Counts = Counts {
     failed: 1,
 };
 
+/// Writes to stdout as Python's block-buffered one fails: the first error is kept and returned at the
+/// end, after every file is formatted, and nothing is written once it has failed.
+#[derive(Default)]
+struct DeferredStdout {
+    error: Option<io::Error>,
+}
+
+impl DeferredStdout {
+    fn write(&mut self, stdout: &mut dyn Write, text: &str) {
+        if self.error.is_some() {
+            return;
+        }
+        self.error = stdout.write_all(text.as_bytes()).err();
+    }
+
+    fn finish(self, status: i32) -> io::Result<i32> {
+        match self.error {
+            Some(error) => Err(error),
+            None => Ok(status),
+        }
+    }
+}
+
 fn format_files(
     files: &[String],
     arguments: &Arguments,
@@ -284,43 +307,47 @@ fn format_files(
     io: &mut Io,
 ) -> io::Result<i32> {
     let mut total = Counts::default();
+    let mut stdout = DeferredStdout::default();
     for file_path in files {
-        match format_one_file(file_path, arguments, options, cwd, io)? {
-            Some(counts) => total += counts,
-            None => return Ok(1),
+        let Some(counts) = format_one_file(file_path, arguments, options, cwd, io) else {
+            return stdout.finish(1);
+        };
+        if counts.formatted > 0 && !arguments.check {
+            stdout.write(io.stdout, &format!("reformatted {file_path}\n"));
         }
+        total += counts;
     }
     let summary = match arguments.check {
         true => check_summary(files.len(), total.formatted, total.failed),
         false => format_summary(files.len(), total.formatted, total.failed),
     };
-    io.stdout.write_all(summary.stdout.as_bytes())?;
+    stdout.write(io.stdout, &summary.stdout);
     let _ = io.stderr.write_all(summary.stderr.as_bytes());
-    Ok(summary.exit_status)
+    stdout.finish(summary.exit_status)
 }
 
-/// `_check_files_formatting` and `_format_files` for one file: its share of the counts, or None when
-/// gdformat would stop with a traceback.
+/// `_check_files_formatting` and `_format_files` for one file, writing the formatted code back unless
+/// checking: its share of the counts, or None when gdformat would stop with a traceback.
 fn format_one_file(
     file_path: &str,
     arguments: &Arguments,
     options: &Options,
     cwd: &Path,
     io: &mut Io,
-) -> io::Result<Option<Counts>> {
+) -> Option<Counts> {
     let path = path_under(cwd, file_path);
     let code = match read_text(&path, !arguments.check) {
         Ok(code) => code,
         Err(ReadError::Io(error)) => {
             report_cannot_open(file_path, &error, io);
-            return Ok(Some(FAILED));
+            return Some(FAILED);
         }
         Err(ReadError::Utf8(error)) => {
             let _ = writeln!(
                 io.stderr,
                 "{file_path}: UnicodeDecodeError: 'utf-8' codec can't decode the file: {error}"
             );
-            return Ok(None);
+            return None;
         }
     };
     let outcome = format_file(&code, options, file_path);
@@ -328,22 +355,21 @@ fn format_one_file(
         let _ = io.stderr.write_all(message.as_bytes());
     }
     if !outcome.success {
-        return Ok(Some(FAILED));
+        return Some(FAILED);
     }
     if !outcome.actually_formatted {
-        return Ok(Some(Counts::default()));
+        return Some(Counts::default());
     }
     if arguments.check {
         let _ = writeln!(io.stderr, "would reformat {file_path}");
-        return Ok(Some(FORMATTED));
+        return Some(FORMATTED);
     }
-    writeln!(io.stdout, "reformatted {file_path}")?;
     let mut counts = FORMATTED;
     if let Err(error) = std::fs::write(&path, &outcome.formatted_code) {
         report_cannot_open(file_path, &error, io);
         counts += FAILED;
     }
-    Ok(Some(counts))
+    Some(counts)
 }
 
 fn report_cannot_open(file_path: &str, error: &io::Error, io: &mut Io) {
@@ -440,6 +466,32 @@ mod tests {
             },
         );
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn a_closed_stdout_does_not_stop_the_files_being_formatted() {
+        let dir = std::env::temp_dir().join(format!("gdformat-pipe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["a.gd", "b.gd"] {
+            std::fs::write(dir.join(name), "func f(a,b):\n\treturn a+b\n").unwrap();
+        }
+        let args = ["a.gd".to_owned(), "b.gd".to_owned()];
+        let result = run(
+            &args,
+            &dir,
+            &mut Io {
+                stdin: &mut &b""[..],
+                stdout: &mut ClosedPipe,
+                stderr: &mut Vec::new(),
+            },
+        );
+        let formatted: Vec<String> = ["a.gd", "b.gd"]
+            .iter()
+            .map(|name| std::fs::read_to_string(dir.join(name)).unwrap())
+            .collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(formatted, ["func f(a, b):\n\treturn a + b\n"; 2]);
     }
 
     #[test]
