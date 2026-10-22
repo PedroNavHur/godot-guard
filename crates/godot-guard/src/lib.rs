@@ -6,6 +6,7 @@ pub mod baseline;
 pub mod check;
 pub mod cli;
 pub mod comments;
+pub mod complexity;
 pub mod config;
 pub mod error;
 pub mod fnmatch;

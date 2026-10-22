@@ -1,0 +1,13 @@
+usage: godot-guard complexity [-h] --json files [files ...]
+
+Score exactly the files given, without a config: one JSON object, each file's
+path (as given) to its functions' name, line, end_line, cyclomatic, and
+cognitive scores (null for nested functions, counted in the enclosing one), or
+to {"error": message} when the file doesn't read or parse.
+
+positional arguments:
+  files
+
+optional arguments:
+  -h, --help  show this help message and exit
+  --json      print the scores as JSON (the only format)
