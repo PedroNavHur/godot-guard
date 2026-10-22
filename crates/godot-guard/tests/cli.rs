@@ -1,5 +1,6 @@
 //! Port of tests/test_cli.py, plus every argument list in tests/data/argv.jsonl, which records how
-//! 0.4.0's argparse reads it (tools/oracle/argv_cases.py), checked against the Rust parser.
+//! 0.4.0's argparse reads it (tools/oracle/argv_cases.py), checked against the Rust parser. 0.4.0 had no
+//! `complexity` command; `with_complexity` adds it to the recorded texts as argparse would.
 
 mod common;
 
@@ -13,6 +14,24 @@ use serde_json::Value;
 
 const ARGV: &str = include_str!("data/argv.jsonl");
 const BOOLEANS: [&str; 5] = ["json", "init", "force", "fast", "staged"];
+
+/// A recorded 0.4.0 text with `complexity` added to the command list, the usage wrapped as argparse wraps
+/// the longer line.
+fn with_complexity(text: &str) -> String {
+    text.replace(
+        "usage: godot-guard [-h] [--version] {check,baseline,format,run,gate,init} ...",
+        "usage: godot-guard [-h] [--version]\n                   {check,baseline,format,run,gate,init,complexity} ...",
+    )
+    .replace(
+        "  {check,baseline,format,run,gate,init}\n",
+        "  {check,baseline,format,run,gate,init,complexity}\n",
+    )
+    .replace(
+        "    init                scaffold config, hooks, and CI\n",
+        "    init                scaffold config, hooks, and CI\n    complexity          print every function's complexity scores as JSON\n",
+    )
+    .replace("'gate', 'init')", "'gate', 'init', 'complexity')")
+}
 
 fn parse(argv: &[&str]) -> godot_guard::argparse::Namespace {
     let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
@@ -68,11 +87,10 @@ fn every_recorded_argument_list_parses_as_0_4_0_parses_it() {
                     stderr,
                 }),
             ) => {
-                let out = case["out"]
-                    .as_str()
-                    .unwrap()
+                let out = with_complexity(case["out"].as_str().unwrap())
                     .replace("godot-guard 0.4.0", VERSION);
-                case["exit"] == status && out == stdout && case["err"] == stderr.as_str()
+                let err = with_complexity(case["err"].as_str().unwrap());
+                case["exit"] == status && out == stdout && err == stderr
             }
             (Value::Null, Ok(_)) | (_, Err(_)) => false,
             (recorded, Ok(namespace)) => same_namespace(recorded, &namespace),

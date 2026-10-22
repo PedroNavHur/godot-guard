@@ -250,6 +250,17 @@ Run from anywhere inside the repo; the root is the nearest directory holding
   detected test script if `tests/run_tests.gd` exists), the two hooks, the
   CI workflow, and a `tools/requirements-lint.txt` line. Never overwrite an
   existing file; print what it skipped.
+- `godot-guard complexity --json FILE...`: the complexity scores pedro-best-practices
+  reads, byte for byte what its `complexity_gdscript.py` prints except for the
+  names (godot-guard's, as in [RULES.md](RULES.md)). Ignores the config,
+  excludes, and baseline, and needs no root: it scores exactly the given files,
+  which may be anywhere. One compact JSON object (`json.dumps`, no trailing
+  newline) keyed by each path as given, in argument order (a repeated path
+  keeps its first place): a list of `{"name", "line", "end_line",
+  "cyclomatic", "cognitive"}` in source order, `cognitive` null for nested
+  functions, or `{"error": message}` for a file that doesn't read as UTF-8 or
+  parse. Exit 0, errors included; `--json` and at least one file are required,
+  else exit 2.
 - `godot-guard --version`.
 
 Godot resolution: `$GODOT`, then `godot`, `godot4` on PATH, then

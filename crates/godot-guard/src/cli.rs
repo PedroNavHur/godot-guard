@@ -1,4 +1,4 @@
-//! Command line: godot-guard check | baseline | format | run | gate | init.
+//! Command line: godot-guard check | baseline | format | run | gate | init | complexity.
 //!
 //! Help texts are 0.4.0's at 80 columns; argparse rewraps them to the terminal's width, this does not.
 
@@ -7,6 +7,7 @@ use std::ffi::OsString;
 
 use crate::argparse::{Exit, Kind, Namespace, Nargs, Opt, Parser};
 use crate::check::{self, BaselineMode, Request};
+use crate::complexity;
 use crate::config::{self, AUTO, Config, Jobs};
 use crate::error::{Failure, Result};
 use crate::gate::{self, Depth, Selection};
@@ -16,6 +17,8 @@ use crate::toolkit;
 use crate::tools;
 
 pub const VERSION: &str = concat!("godot-guard ", env!("CARGO_PKG_VERSION"));
+
+const COMPLEXITY_USAGE: &str = "usage: godot-guard complexity [-h] --json files [files ...]";
 
 const HELP_OPTION: Opt = Opt {
     strings: &["-h", "--help"],
@@ -104,9 +107,16 @@ pub fn build_parser() -> Parser {
         "usage: godot-guard init [-h]",
         include_str!("help/init.txt"),
     );
+    let mut complexity = command(
+        "godot-guard complexity",
+        COMPLEXITY_USAGE,
+        include_str!("help/complexity.txt"),
+    );
+    complexity.options.push(flag(&["--json"], "json"));
+    complexity.positional = Some(("files", Nargs::Star));
     Parser {
         prog: "godot-guard",
-        usage: "usage: godot-guard [-h] [--version] {check,baseline,format,run,gate,init} ...",
+        usage: "usage: godot-guard [-h] [--version]\n                   {check,baseline,format,run,gate,init,complexity} ...",
         help: include_str!("help/godot-guard.txt"),
         options: vec![
             HELP_OPTION,
@@ -124,6 +134,7 @@ pub fn build_parser() -> Parser {
             ("run", run),
             ("gate", gate),
             ("init", init),
+            ("complexity", complexity),
         ],
     }
 }
@@ -175,6 +186,25 @@ fn run_gate(args: &Namespace) -> Result<i32> {
     gate::gate(&config, depth, selection)
 }
 
+/// `complexity`'s report, or argparse's error for a missing `--json` or no files.
+fn complexity_report(args: &Namespace) -> (i32, String) {
+    let missing: Vec<&str> = [
+        (!args.flag("json")).then_some("--json"),
+        args.positionals.is_empty().then_some("files"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if missing.is_empty() {
+        return (0, complexity::report(&args.positionals));
+    }
+    eprintln!(
+        "{COMPLEXITY_USAGE}\ngodot-guard complexity: error: the following arguments are required: {}",
+        missing.join(", ")
+    );
+    (2, String::new())
+}
+
 /// `baseline`'s flags as a mode; `--force` without `--init` changes nothing.
 fn baseline_mode(args: &Namespace) -> BaselineMode {
     match (args.flag("init"), args.flag("force")) {
@@ -222,6 +252,7 @@ fn run_command(args: &Namespace) -> Result<i32> {
             )
         }
         "gate" => (run_gate(args)?, String::new()),
+        "complexity" => complexity_report(args),
         other => unreachable!("argparse accepted the command {other}"),
     };
     tools::write_stdout(&text)?;

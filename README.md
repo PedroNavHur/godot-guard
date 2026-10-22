@@ -31,12 +31,12 @@ no Python. Download a release build (Linux x86_64 or macOS arm64) onto PATH:
 
 ```
 curl --fail --location \
-  https://github.com/PedroNavHur/godot-guard/releases/download/v0.5.0/godot-guard-aarch64-apple-darwin.tar.gz \
+  https://github.com/PedroNavHur/godot-guard/releases/download/v0.6.0/godot-guard-aarch64-apple-darwin.tar.gz \
   | tar --extract --gzip --directory ~/.local/bin
 ```
 
 On Linux use `godot-guard-x86_64-unknown-linux-gnu.tar.gz`. Elsewhere, build
-it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.5.0 godot-guard`.
+it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.6.0 godot-guard`.
 Godot is found through `$GODOT`, `godot` or `godot4` on PATH, or
 `/Applications/Godot.app`.
 
@@ -55,7 +55,14 @@ godot-guard baseline [--init [--force]]
 godot-guard format [FILE...]        # gdformat in write mode
 godot-guard run -- ARGS...          # Godot; fails on ERROR:, WARNING:, SCRIPT ERROR: lines
 godot-guard gate [--fast] [--staged | FILE...] [--jobs N|auto]
+godot-guard complexity --json FILE...  # every function's scores, for pedro-best-practices
 ```
+
+`complexity --json` reads no config: it scores exactly the files given and
+prints one JSON object, each path as given to its functions' `name`, `line`,
+`end_line`, `cyclomatic`, and `cognitive` (null for nested functions), or to
+`{"error": message}` for a file that doesn't read or parse. It exits 0 even
+then; a usage error exits 2.
 
 A directory argument stands for the scanned scripts below it. Hidden
 directories and `exclude` matches are never scanned, even when named as an
