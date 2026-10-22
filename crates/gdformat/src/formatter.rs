@@ -8,8 +8,8 @@ use crate::constants::{
 use crate::context::Context;
 use crate::function_statement::StatementFormatter;
 use crate::node::Ex;
-use crate::py;
 use crate::types::FormattedLines;
+use pycompat::{builtins, string};
 
 /// gdtoolkit's `format_code`, given the trees `parser.parse(code, gather_metadata=True)` and
 /// `parser.parse_comments(code)` build. `spaces_for_indent` None indents with tabs.
@@ -21,7 +21,7 @@ pub fn format_code(
     comment_parse_tree: &Tree,
 ) -> String {
     let mut gdscript_code_lines = vec![""];
-    gdscript_code_lines.extend(py::splitlines(gdscript_code));
+    gdscript_code_lines.extend(string::splitlines(gdscript_code));
     let single_indent_size = spaces_for_indent.unwrap_or(TAB_INDENT_SIZE);
     let single_indent_string = match spaces_for_indent {
         None => "\t".to_owned(),
@@ -68,7 +68,7 @@ fn add_inline_comments(
             postprocessed_lines.push((line_no, line));
             continue;
         };
-        let start = py::slice(remaining_comments.len(), Some(number), None).start;
+        let start = builtins::slice(remaining_comments.len(), Some(number), None).start;
         let comments = remaining_comments.split_off(start);
         if comments.is_empty() {
             postprocessed_lines.push((line_no, line));
@@ -104,7 +104,7 @@ fn add_standalone_comments(
             last_expression_line_no = number;
             continue;
         }
-        let range = py::slice(
+        let range = builtins::slice(
             remaining_comments.len(),
             Some(number),
             Some(last_expression_line_no),
@@ -125,7 +125,7 @@ fn add_standalone_comments(
 fn get_greater_indent<'l>(line_a: &'l str, line_b: &'l str, context: &Context) -> &'l str {
     let line_a_indent = context.indent_match(line_a);
     let line_b_indent = context.indent_match(line_b);
-    match py::len(line_a_indent) > py::len(line_b_indent) {
+    match builtins::len(line_a_indent) > builtins::len(line_b_indent) {
         true => line_a_indent,
         false => line_b_indent,
     }

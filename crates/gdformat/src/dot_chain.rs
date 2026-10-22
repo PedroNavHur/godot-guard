@@ -8,8 +8,8 @@ use crate::expression::{
 use crate::expression_utils::{expression_contains_lambda, is_expression_forcing_multiple_lines};
 use crate::function_statement::StatementFormatter;
 use crate::node::Ex;
-use crate::py;
 use crate::types::FormattedLines;
+use pycompat::string;
 
 pub(crate) fn format_subscription_to_multiple_lines<'a>(
     expression: &Ex<'a>,
@@ -30,7 +30,7 @@ pub(crate) fn format_subscription_to_multiple_lines<'a>(
     let (last_line, last_text) = subscriptee_lines.pop().expect("no subscriptee lines");
     let last_line = last_line.expect("subscriptee line without a number");
     let subscript_expression_context = ExpressionContext::new(
-        format!("{}[", py::strip(&last_text)),
+        format!("{}[", string::strip(&last_text)),
         last_line,
         format!("]{}", expression_context.suffix_string),
         expression_context.suffix_line,

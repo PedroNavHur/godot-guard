@@ -7,11 +7,14 @@ use std::ops::AddAssign;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
-use gdlint::repr::str_repr;
+use pycompat::builtins::{
+    ReadError, decode_replace, path_under, read_text, read_text_for_update, repr,
+};
+use pycompat::os::strerror;
+use pycompat::utils::find_gd_files_from_paths;
 
 use crate::args::{Arguments, USAGE, parse_arguments};
 use crate::config::{CONFIG_FILE_NAME, Config, DEFAULT_CONFIG_YAML, find_config_file, load_config};
-use crate::files::{ReadError, find_gd_files_from_paths, path_under, read_text, strerror};
 use crate::formatter::format_code;
 use crate::parse::parse_code;
 use crate::safety_checks::{ParsedCode, SafetyError, SafetyViolation, check_formatting_safety};
@@ -241,7 +244,7 @@ fn format_stdin(options: &Options, io: &mut Io) -> io::Result<i32> {
         let _ = writeln!(io.stderr, "gdformat: cannot read STDIN: {error}");
         return Ok(1);
     }
-    let code = crate::files::universal_newlines(&String::from_utf8_lossy(&bytes));
+    let code = decode_replace(&bytes);
     let outcome = format_file(&code, options, "STDIN");
     if let Some(message) = &outcome.error_message {
         let _ = io.stderr.write_all(message.as_bytes());
@@ -336,7 +339,11 @@ fn format_one_file(
     io: &mut Io,
 ) -> Option<Counts> {
     let path = path_under(cwd, file_path);
-    let code = match read_text(&path, !arguments.check) {
+    let read = match arguments.check {
+        true => read_text,
+        false => read_text_for_update,
+    };
+    let code = match read(&path) {
         Ok(code) => code,
         Err(ReadError::Io(error)) => {
             report_cannot_open(file_path, &error, io);
@@ -376,7 +383,7 @@ fn report_cannot_open(file_path: &str, error: &io::Error, io: &mut Io) {
     let _ = writeln!(
         io.stderr,
         "Cannot open file {}: {}",
-        str_repr(file_path),
+        repr(file_path),
         strerror(error)
     );
 }

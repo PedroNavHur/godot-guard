@@ -6,8 +6,8 @@ use crate::constants::{SurroundingEmptyLinesTable, TAB_INDENT_SIZE};
 use crate::context::Context;
 use crate::function_statement::StatementFormatter;
 use crate::node::Ex;
-use crate::py;
 use crate::types::{FormattedLines, Outcome};
+use pycompat::{builtins, string};
 
 pub fn format_block<'a>(
     statements: &[Ex<'a>],
@@ -125,7 +125,7 @@ fn with_annotations<'a>(mut lines: FormattedLines, context: &mut Context<'a>) ->
 
 pub fn reconstruct_blank_lines_in_range(begin: i64, end: i64, context: &Context) -> FormattedLines {
     let comments = context.standalone_comments;
-    let comments_in_range = &comments[py::slice(comments.len(), Some(begin + 1), Some(end))];
+    let comments_in_range = &comments[builtins::slice(comments.len(), Some(begin + 1), Some(end))];
     let line_count = (end - begin - 1).max(0) as usize;
     let mut reconstructed_lines = Vec::new();
     for (line_no, comment) in (begin + 1..end).zip(comments_in_range) {
@@ -179,7 +179,7 @@ fn find_dedent_line_number(previously_processed_line_number: i64, context: &Cont
         return lines.len() as i64;
     }
     let first = previously_processed_line_number + 1;
-    let following = &lines[py::slice(lines.len(), Some(first), None)];
+    let following = &lines[builtins::slice(lines.len(), Some(first), None)];
     let line_no = first
         + following
             .iter()
@@ -189,7 +189,7 @@ fn find_dedent_line_number(previously_processed_line_number: i64, context: &Cont
     let start = (line_no - 1).min(lines.len() as i64 - 1);
     let blank_run = (0..=start)
         .rev()
-        .take_while(|&index| py::strip(lines[index as usize]).is_empty())
+        .take_while(|&index| string::strip(lines[index as usize]).is_empty())
         .count();
     line_no - blank_run as i64
 }

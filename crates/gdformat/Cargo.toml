@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 gdlint = { path = "../gdlint" }
 gdscript = { path = "../gdscript" }
+pycompat = { path = "../pycompat" }
 
 [dev-dependencies]
 # The parity tests also format gdtoolkit's own trees, read through gdscript's oracle loader.

@@ -2,8 +2,8 @@ use crate::context::{Context, ExpressionContext};
 use crate::expression::format_concrete_expression;
 use crate::expression_to_str::expression_to_str;
 use crate::node::Ex;
-use crate::py;
 use crate::types::{FormattedLine, FormattedLines, Outcome};
+use pycompat::{builtins, string};
 
 const STANDALONE_ANNOTATIONS: [&str; 8] = [
     "abstract",
@@ -93,14 +93,15 @@ pub fn prepend_annotations_to_formatted_line<'a>(
 ) -> FormattedLines {
     assert!(!context.annotations.is_empty());
     let annotations = std::mem::take(&mut context.annotations);
-    let whitelineless_line = py::strip(&line_to_prepend_to.1);
+    let whitelineless_line = string::strip(&line_to_prepend_to.1);
     let annotations_string = annotations
         .iter()
         .map(expression_to_str)
         .collect::<Vec<_>>()
         .join(" ");
-    let single_line_length =
-        context.indent as i64 + py::len(&annotations_string) + py::len(whitelineless_line);
+    let single_line_length = context.indent as i64
+        + builtins::len(&annotations_string)
+        + builtins::len(whitelineless_line);
     // Check if this is an abstract function or class_name annotation
     let lone_abstract = annotations.len() == 1 && annotations[0].child(0).value() == "abstract";
     let is_abstract_func = lone_abstract && whitelineless_line.starts_with("func");
@@ -144,7 +145,7 @@ fn annotations_have_standalone_comments(
     last_line: Option<i64>,
 ) -> bool {
     let end = last_line.unwrap_or_else(|| annotations[annotations.len() - 1].end_line());
-    let range = py::slice(
+    let range = builtins::slice(
         standalone_comments.len(),
         Some(annotations[0].line()),
         Some(end),

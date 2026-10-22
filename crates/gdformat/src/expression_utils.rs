@@ -1,5 +1,5 @@
 use crate::node::Ex;
-use crate::py;
+use pycompat::{builtins, string};
 
 pub fn remove_outer_parentheses<'a>(expression: &Ex<'a>) -> Ex<'a> {
     if expression.is("par_expr") {
@@ -81,11 +81,11 @@ pub fn is_any_parentheses(expression: &Ex) -> bool {
 fn is_multiline_string(expression: &Ex) -> bool {
     expression.is("string")
         && expression.child(0).kind() == Some("LONG_STRING")
-        && py::splitlines(expression.child(0).value()).len() > 1
+        && string::splitlines(expression.child(0).value()).len() > 1
 }
 
 fn has_standalone_comments(expression: &Ex, standalone_comments: &[Option<String>]) -> bool {
-    let range = py::slice(
+    let range = builtins::slice(
         standalone_comments.len(),
         Some(expression.line()),
         Some(expression.end_line()),

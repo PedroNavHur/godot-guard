@@ -5,8 +5,8 @@ use crate::expression_utils::{
     is_expression_forcing_multiple_lines, is_foldable, remove_outer_parentheses,
 };
 use crate::node::Ex;
-use crate::py;
 use crate::types::{FormattedLines, Outcome};
+use pycompat::builtins;
 
 mod lists;
 mod multiline;
@@ -77,7 +77,7 @@ fn format_concrete_expression_to_single_line(
 
 /// The line's length with tabs counted as `TAB_INDENT_SIZE` columns.
 pub(crate) fn tab_expanded_len(line: &str) -> i64 {
-    py::len(line) + (TAB_INDENT_SIZE as i64 - 1) * line.matches('\t').count() as i64
+    builtins::len(line) + (TAB_INDENT_SIZE as i64 - 1) * line.matches('\t').count() as i64
 }
 
 fn format_foldable<'a>(
