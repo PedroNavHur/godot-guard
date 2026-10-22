@@ -246,40 +246,58 @@ pub fn plural(count: usize, noun: &str) -> String {
     }
 }
 
+/// What `godot-guard baseline` does: `--force` means nothing without `--init`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BaselineMode {
+    /// No flags: lower or drop entries of the existing baseline, never add.
+    Tighten,
+    /// `--init`: record every current violation, unless a baseline exists.
+    Create,
+    /// `--init --force`: record every current violation over any existing baseline.
+    Replace,
+}
+
 /// `godot-guard baseline`: the status and what it prints.
 pub fn update_baseline(
     config: &Config,
-    init: bool,
-    force: bool,
+    mode: BaselineMode,
     scripts: &Scripts,
 ) -> Result<(i32, String)> {
     let path = config.baseline_path();
-    if init && path.exists() && !force {
-        return Ok((
-            1,
-            format!("{BASELINE_NAME} already exists; pass --force to overwrite it\n"),
-        ));
+    match (mode, path.exists()) {
+        (BaselineMode::Create, true) => {
+            let message = format!("{BASELINE_NAME} already exists; pass --force to overwrite it\n");
+            Ok((1, message))
+        }
+        (BaselineMode::Tighten, false) => {
+            let message = format!(
+                "no {BASELINE_NAME}; nothing to tighten (create one with `godot-guard baseline --init`)\n"
+            );
+            Ok((0, message))
+        }
+        (BaselineMode::Tighten, true) => tighten(config, &path, scripts),
+        (BaselineMode::Create | BaselineMode::Replace, _) => record_all(config, &path, scripts),
     }
-    if !init && !path.exists() {
-        let message = format!(
-            "no {BASELINE_NAME}; nothing to tighten (create one with `godot-guard baseline --init`)\n"
-        );
-        return Ok((0, message));
-    }
+}
+
+/// Write a baseline of every current violation, and say how many of each rule.
+fn record_all(config: &Config, path: &Path, scripts: &Scripts) -> Result<(i32, String)> {
     let results = measure(config, &config.scanned_files(), None, scripts)?;
-    if init {
-        let data = baseline::violations(config, &results);
-        baseline::write(&path, &data)?;
-        let counts: Vec<String> = baselined()
-            .into_iter()
-            .map(|rule| format!("{rule} {}", data.rule(rule).len()))
-            .collect();
-        return Ok((0, format!("wrote {BASELINE_NAME}: {}\n", counts.join(", "))));
-    }
-    let (data, changes) = baseline::tighten(config, &baseline::load(&path)?, &results);
+    let data = baseline::violations(config, &results);
+    baseline::write(path, &data)?;
+    let counts: Vec<String> = baselined()
+        .into_iter()
+        .map(|rule| format!("{rule} {}", data.rule(rule).len()))
+        .collect();
+    Ok((0, format!("wrote {BASELINE_NAME}: {}\n", counts.join(", "))))
+}
+
+fn tighten(config: &Config, path: &Path, scripts: &Scripts) -> Result<(i32, String)> {
+    let results = measure(config, &config.scanned_files(), None, scripts)?;
+    let (data, changes) = baseline::tighten(config, &baseline::load(path)?, &results);
     let mut out: String = changes.iter().map(|change| format!("{change}\n")).collect();
     if !changes.is_empty() {
-        baseline::write(&path, &data)?;
+        baseline::write(path, &data)?;
     }
     out += &format!("{BASELINE_NAME}: {}\n", plural(changes.len(), "change"));
     Ok((0, out))

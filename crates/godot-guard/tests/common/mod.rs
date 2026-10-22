@@ -10,7 +10,7 @@ use std::process::Command;
 use std::collections::BTreeMap;
 
 use godot_guard::baseline::{self, Data};
-use godot_guard::check::{self, Request};
+use godot_guard::check::{self, BaselineMode, Request};
 use godot_guard::config::{self, Config};
 use godot_guard::godot_warnings::{ERROR, REQUIRED};
 use godot_guard::scripts::Scripts;
@@ -114,8 +114,8 @@ pub fn check_json(config: &Config, files: Option<Vec<String>>) -> (i32, Value) {
     (status, serde_json::from_str(&text).unwrap())
 }
 
-pub fn update(config: &Config, init: bool, force: bool) -> (i32, String) {
-    check::update_baseline(config, init, force, &Scripts::new()).unwrap()
+pub fn update(config: &Config, mode: BaselineMode) -> (i32, String) {
+    check::update_baseline(config, mode, &Scripts::new()).unwrap()
 }
 
 /// A function with `count` sequential ifs: cognitive `count`.

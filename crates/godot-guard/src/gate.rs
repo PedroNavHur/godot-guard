@@ -108,7 +108,23 @@ pub struct Plan<'a> {
     pub analyzer: &'a Path,
 }
 
-pub fn steps_for<'a>(plan: &'a Plan<'a>, files: &'a [String], fast: bool) -> Vec<Step<'a>> {
+/// How much of the gate runs: `--fast` stops after format, lint, and check.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Depth {
+    Fast,
+    Full,
+}
+
+/// Which scripts the gate covers.
+#[derive(Clone, Copy)]
+pub enum Selection<'a> {
+    /// The staged scripts, as the index holds them.
+    Staged,
+    /// The scanned scripts among these working-tree files, or every scanned script when empty.
+    Files(&'a [String]),
+}
+
+pub fn steps_for<'a>(plan: &'a Plan<'a>, files: &'a [String], depth: Depth) -> Vec<Step<'a>> {
     let (gate, root) = (&plan.config.gate, &plan.sources.root);
     let mut steps = Vec::new();
     if gate.format {
@@ -130,7 +146,7 @@ pub fn steps_for<'a>(plan: &'a Plan<'a>, files: &'a [String], fast: bool) -> Vec
         Phase::Prepare,
         Box::new(move |echo, _| check_step(plan, echo)),
     ));
-    if fast {
+    if depth == Depth::Fast {
         return steps;
     }
     for command in &gate.steps {
@@ -213,17 +229,17 @@ fn write_analyzer() -> Result<(Scratch, PathBuf)> {
 fn run_gate(
     config: &Config,
     chosen: Option<&[String]>,
-    fast: bool,
+    depth: Depth,
     sources: Option<&Config>,
 ) -> Result<i32> {
-    if chosen.is_some_and(<[String]>::is_empty) && fast {
+    if chosen.is_some_and(<[String]>::is_empty) && depth == Depth::Fast {
         tools::write_stdout("godot-guard gate: no GDScript files selected\n")?;
         return Ok(0);
     }
     let jobs = worker_count(config.gate.jobs)?;
     let sources = sources.unwrap_or(config);
     let files = chosen.map_or_else(|| sources.scanned_files(), <[String]>::to_vec);
-    let written = (!fast && config.gate.analyzer)
+    let written = (depth == Depth::Full && config.gate.analyzer)
         .then(write_analyzer)
         .transpose()?;
     let analyzer = written
@@ -239,15 +255,20 @@ fn run_gate(
         analyzer,
     };
     let out: &Out = &tools::write_stdout;
-    run_steps(&steps_for(&plan, &files, fast), jobs, out)
+    run_steps(&steps_for(&plan, &files, depth), jobs, out)
 }
 
-/// `--staged` checks the index's content of the staged scripts, not the working tree's.
-pub fn gate(config: &Config, fast: bool, use_staged: bool, files: &[String]) -> Result<i32> {
-    if !use_staged {
-        let chosen = (!files.is_empty()).then(|| select(config, files));
-        return run_gate(config, chosen.as_deref(), fast, None);
-    }
+/// `Selection::Staged` checks the index's content of the staged scripts, not the working tree's.
+pub fn gate(config: &Config, depth: Depth, selection: Selection) -> Result<i32> {
+    let files = match selection {
+        Selection::Files(files) => files,
+        Selection::Staged => return gate_staged(config, depth),
+    };
+    let chosen = (!files.is_empty()).then(|| select(config, files));
+    run_gate(config, chosen.as_deref(), depth, None)
+}
+
+fn gate_staged(config: &Config, depth: Depth) -> Result<i32> {
     let (chosen, links) = staged(config)?;
     for link in &links {
         tools::write_stdout(&format!(
@@ -258,8 +279,8 @@ pub fn gate(config: &Config, fast: bool, use_staged: bool, files: &[String]) -> 
         return Ok(1);
     }
     if chosen.is_empty() {
-        return run_gate(config, Some(&chosen), fast, None);
+        return run_gate(config, Some(&chosen), depth, None);
     }
     let (_copy, sources) = snapshot(config, &chosen)?;
-    run_gate(config, Some(&chosen), fast, Some(&sources))
+    run_gate(config, Some(&chosen), depth, Some(&sources))
 }

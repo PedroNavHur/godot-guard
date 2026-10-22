@@ -6,10 +6,10 @@ use std::env;
 use std::ffi::OsString;
 
 use crate::argparse::{Exit, Kind, Namespace, Nargs, Opt, Parser};
-use crate::check::{self, Request};
+use crate::check::{self, BaselineMode, Request};
 use crate::config::{self, AUTO, Config, Jobs};
 use crate::error::{Failure, Result};
-use crate::gate;
+use crate::gate::{self, Depth, Selection};
 use crate::scaffold;
 use crate::scripts::Scripts;
 use crate::toolkit;
@@ -162,12 +162,26 @@ fn run_gate(args: &Namespace) -> Result<i32> {
         return Ok(1);
     }
     config.gate.jobs = gate_jobs(&config, args);
-    gate::gate(
-        &config,
-        args.flag("fast"),
-        args.flag("staged"),
-        &args.positionals,
-    )
+    let depth = if args.flag("fast") {
+        Depth::Fast
+    } else {
+        Depth::Full
+    };
+    let selection = if args.flag("staged") {
+        Selection::Staged
+    } else {
+        Selection::Files(&args.positionals)
+    };
+    gate::gate(&config, depth, selection)
+}
+
+/// `baseline`'s flags as a mode; `--force` without `--init` changes nothing.
+fn baseline_mode(args: &Namespace) -> BaselineMode {
+    match (args.flag("init"), args.flag("force")) {
+        (false, _) => BaselineMode::Tighten,
+        (true, false) => BaselineMode::Create,
+        (true, true) => BaselineMode::Replace,
+    }
 }
 
 fn run_command(args: &Namespace) -> Result<i32> {
@@ -189,9 +203,7 @@ fn run_command(args: &Namespace) -> Result<i32> {
                 &scripts,
             )?
         }
-        "baseline" => {
-            check::update_baseline(&load()?, args.flag("init"), args.flag("force"), &scripts)?
-        }
+        "baseline" => check::update_baseline(&load()?, baseline_mode(args), &scripts)?,
         "init" => {
             let cwd = env::current_dir().map_err(|e| Failure::crash("the working directory", e))?;
             let (root, _) = config::find_root(&cwd)?;

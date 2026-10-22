@@ -4,6 +4,7 @@ mod common;
 
 use common::{Repo, branches, check, entries, record, recorded, update};
 use godot_guard::baseline::{self, Data};
+use godot_guard::check::BaselineMode;
 use godot_guard::config::Config;
 use godot_guard::rules::{self, Surfaces};
 use godot_guard::scripts::Scripts;
@@ -93,7 +94,7 @@ fn subset_only_judges_its_own_entries() {
 fn baseline_tightens_and_never_adds() {
     let busy = Busy::new();
     busy.record(&[("a.gd::busy", 6), ("a.gd::calm", 3), ("a.gd::gone", 5)]);
-    let (status, output) = update(&busy.config, false, false);
+    let (status, output) = update(&busy.config, BaselineMode::Tighten);
     assert_eq!(status, 0);
     assert_eq!(
         recorded(&busy.config, "cognitive-complexity"),
@@ -106,7 +107,7 @@ fn baseline_tightens_and_never_adds() {
 #[test]
 fn init_records_every_violation() {
     let busy = Busy::new();
-    let (status, output) = update(&busy.config, true, false);
+    let (status, output) = update(&busy.config, BaselineMode::Create);
     assert_eq!(status, 0);
     assert_eq!(
         recorded(&busy.config, "cognitive-complexity"),
@@ -122,10 +123,10 @@ fn init_records_every_violation() {
 fn init_refuses_to_overwrite() {
     let busy = Busy::new();
     busy.record(&[]);
-    let (status, output) = update(&busy.config, true, false);
+    let (status, output) = update(&busy.config, BaselineMode::Create);
     assert_eq!(status, 1);
     assert!(output.contains("--force"));
-    assert_eq!(update(&busy.config, true, true).0, 0);
+    assert_eq!(update(&busy.config, BaselineMode::Replace).0, 0);
     assert_eq!(recorded(&busy.config, "cognitive-complexity").len(), 2);
 }
 
@@ -137,7 +138,7 @@ fn unparsable_file_keeps_its_function_entries() {
     let (_, output) = check(&busy.config, None);
     assert!(output.contains("(parse-error)"));
     assert!(!output.contains("no longer exists"));
-    update(&busy.config, false, false);
+    update(&busy.config, BaselineMode::Tighten);
     assert_eq!(
         recorded(&busy.config, "cognitive-complexity"),
         entries(&[("a.gd::busy", 4), ("b.gd::other", 3)])
@@ -151,7 +152,7 @@ fn long_comment_count_is_baselined_per_file() {
     let repo = Repo::new(&[("c.gd", &source)], None);
     let config = repo.config();
     assert_eq!(check(&config, None).1.matches("(long-comment)").count(), 2);
-    update(&config, true, false);
+    update(&config, BaselineMode::Create);
     assert_eq!(check(&config, None).0, 0);
     repo.write("c.gd", &format!("{source}{comment}var d := 1\n"));
     let (status, output) = check(&config, None);
@@ -200,7 +201,7 @@ fn each_lambda_is_judged_on_its_own() {
         "{output}"
     );
     assert!(!output.contains("<lambda#1>"));
-    assert_eq!(update(&repo.config(), true, true).0, 0);
+    assert_eq!(update(&repo.config(), BaselineMode::Replace).0, 0);
     let expected = entries(&[("a.gd::f.<lambda#1>", 5), ("a.gd::f.<lambda#2>", 4)]);
     assert_eq!(recorded(&config, "cyclomatic-complexity"), expected);
 }
