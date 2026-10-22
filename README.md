@@ -26,20 +26,29 @@ tsc, Husky, and CI, with a ratchet baseline so existing code can adopt them.
 
 ## Install
 
-In the game's `tools/requirements-lint.txt`, next to gdtoolkit:
+godot-guard is one Rust binary; gdformat and gdlint run inside it, so it needs
+no Python. Download a release build (Linux x86_64 or macOS arm64) onto PATH:
 
 ```
-godot-guard @ git+https://github.com/PedroNavHur/godot-guard@v0.4.0
+curl --fail --location \
+  https://github.com/PedroNavHur/godot-guard/releases/download/v0.5.0/godot-guard-aarch64-apple-darwin.tar.gz \
+  | tar --extract --gzip --directory ~/.local/bin
 ```
 
-Then `python3 -m venv .venv && .venv/bin/pip install -r tools/requirements-lint.txt`.
-Python 3.9 or newer; Godot is found through `$GODOT`, `godot` or `godot4` on
-PATH, or `/Applications/Godot.app`.
+On Linux use `godot-guard-x86_64-unknown-linux-gnu.tar.gz`. Elsewhere, build
+it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.5.0 godot-guard`.
+Godot is found through `$GODOT`, `godot` or `godot4` on PATH, or
+`/Applications/Godot.app`.
+
+The hooks `init` installs run `.venv/bin/godot-guard` when it exists, then
+`godot-guard` on PATH, so a project moving from the Python package (0.4.0 and
+earlier, `pip install` of `godot-guard @ git+...`) removes that package from
+its `.venv` and its `tools/requirements-lint.txt`.
 
 ## Commands
 
 ```
-godot-guard init                    # config, hooks, CI workflow, requirement line; never overwrites
+godot-guard init                    # config, hooks, CI workflow; never overwrites
 godot-guard check [FILE...]         # the rules, against the baseline
 godot-guard check --json [FILE...]  # the same verdict as one JSON object, for tools
 godot-guard baseline [--init [--force]]
@@ -209,10 +218,20 @@ are never baselined.
 ## Development
 
 ```
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+```
+
+The Rust workspace is in `crates/`; [docs/rust-port.md](docs/rust-port.md)
+maps its crates, the parity tests, and releasing. The Python package in `src/`
+is godot-guard 0.4.0, kept as the parity oracle:
+
+```
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python -m unittest
 GODOT_GUARD_PARITY_REPOS=/path/to/hexstead:/path/to/wingmen .venv/bin/python -m unittest tests.test_parity
 ```
 
-The parity tests compare the scores with pedro-best-practices' reference
+The Python parity tests compare the scores with pedro-best-practices' reference
 scripts (`GODOT_GUARD_PBP_SCRIPTS` overrides their location).

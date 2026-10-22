@@ -1,0 +1,16 @@
+usage: godot-guard [-h] [--version] {check,baseline,format,run,gate,init} ...
+
+Guardrails for Godot 4 projects.
+
+positional arguments:
+  {check,baseline,format,run,gate,init}
+    check               run the rules against the baseline
+    baseline            tighten the baseline, or --init it
+    format              gdformat the files or the scanned paths
+    run                 run Godot; fail on errors and warnings
+    gate                the quality gate
+    init                scaffold config, hooks, and CI
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit

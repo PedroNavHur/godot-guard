@@ -1,0 +1,19 @@
+[package]
+name = "gdscript"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Read tools/oracle/dump_tree.py output; for parity tests and ports run on gdtoolkit's trees.
+oracle = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+unicode-ident = "1"
+serde_json = { version = "1", optional = true, features = ["unbounded_depth"] }
+serde = { version = "1", optional = true }
+
+[dev-dependencies]
+# The parity tests read oracle dumps.
+gdscript = { path = ".", features = ["oracle"] }

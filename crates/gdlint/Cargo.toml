@@ -1,0 +1,15 @@
+[package]
+name = "gdlint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gdscript = { path = "../gdscript" }
+pycompat = { path = "../pycompat" }
+regex = "1"
+
+[dev-dependencies]
+gdscript = { path = "../gdscript", features = ["oracle"] }
+serde_json = "1"

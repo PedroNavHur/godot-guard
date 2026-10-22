@@ -1,0 +1,10 @@
+[package]
+name = "pycompat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+regex = "1"
+saphyr-parser = "0.2"

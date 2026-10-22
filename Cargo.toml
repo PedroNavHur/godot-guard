@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.5.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.99"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
