@@ -95,13 +95,16 @@ impl Scorer {
         self.frames.pop();
     }
 
-    /// Enter (`entering`) or leave a nesting region: the body of an if, else, loop, case, or ternary branch.
-    fn nest(&mut self, entering: bool) {
+    /// Enter a nesting region: the body of an if, else, loop, case, or ternary branch.
+    fn enter_nesting(&mut self) {
         if let Some(frame) = self.frames.last_mut() {
-            match entering {
-                true => frame.nesting += 1,
-                false => frame.nesting -= 1,
-            }
+            frame.nesting += 1;
+        }
+    }
+
+    fn leave_nesting(&mut self) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.nesting -= 1;
         }
     }
 
@@ -267,11 +270,11 @@ impl<'a> Analyzer<'a> {
     }
 
     fn nested_children<I: IntoIterator<Item = &'a Node>>(&mut self, children: I) {
-        self.scorer.nest(true);
+        self.scorer.enter_nesting();
         for child in children {
             self.walk(child);
         }
-        self.scorer.nest(false);
+        self.scorer.leave_nesting();
     }
 
     // Functions and classes

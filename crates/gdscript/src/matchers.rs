@@ -147,7 +147,7 @@ fn regular_string(bytes: &[u8], open: usize) -> usize {
     if bytes.get(open + 1) == Some(&quote) && bytes.get(open + 2) == Some(&quote) {
         return 0;
     }
-    closing(bytes, open + 1, &[quote], false)
+    closing(bytes, open + 1, &[quote], Dot::NotNewline)
 }
 
 /// `"""…"""` or `'''…'''` with the same escape rule as `regular_string`, `.` matching newlines.
@@ -160,46 +160,60 @@ fn long_string(bytes: &[u8], open: usize) -> usize {
     if bytes.get(open..open + 3) != Some(&delimiter[..]) {
         return 0;
     }
-    closing(bytes, open + 3, &delimiter, true)
+    closing(bytes, open + 3, &delimiter, Dot::AnyChar)
+}
+
+/// What `.` matches in a regex: any character with `(?s)`, otherwise any but `\n`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Dot {
+    AnyChar,
+    NotNewline,
 }
 
 /// The end of `.*?(?<!\\)(\\\\)*?DELIMITER` starting at `body`, or 0 when it does not match.
-fn closing(bytes: &[u8], body: usize, delimiter: &[u8], dotall: bool) -> usize {
+fn closing(bytes: &[u8], body: usize, delimiter: &[u8], dot: Dot) -> usize {
     let mut end = body;
     loop {
-        if bytes[end - 1] != b'\\' {
-            let mut at = end;
-            loop {
-                if bytes[at..].starts_with(delimiter) {
-                    return at + delimiter.len();
-                }
-                if !bytes[at..].starts_with(b"\\\\") {
-                    break;
-                }
-                at += 2;
-            }
+        if let Some(found) = closes_at(bytes, end, delimiter) {
+            return found;
         }
         match bytes.get(end) {
             None => return 0,
-            Some(b'\n') if !dotall => return 0,
+            Some(b'\n') if dot == Dot::NotNewline => return 0,
             Some(_) => end += 1,
         }
     }
 }
 
+/// The end of `(?<!\\)(\\\\)*?DELIMITER` with the lookbehind at `end`, or None when it does not match
+/// there: the lazy `(\\\\)*?` tries 0, 1, 2… escaped-backslash pairs before the delimiter.
+fn closes_at(bytes: &[u8], end: usize, delimiter: &[u8]) -> Option<usize> {
+    if bytes[end - 1] == b'\\' {
+        return None;
+    }
+    let mut at = end;
+    loop {
+        if bytes[at..].starts_with(delimiter) {
+            return Some(at + delimiter.len());
+        }
+        if !bytes[at..].starts_with(b"\\\\") {
+            return None;
+        }
+        at += 2;
+    }
+}
+
 /// `(?:\r?\n[\t ]*|#[^\n]*)+`, each repetition greedy; nothing follows, so nothing backtracks.
 fn newline(bytes: &[u8]) -> usize {
+    let indent = |b: u8| b == b'\t' || b == b' ';
     let mut at = 0;
     loop {
-        let rest = &bytes[at..];
-        if rest.starts_with(b"\n") || rest.starts_with(b"\r\n") {
-            let newline = if rest[0] == b'\r' { 2 } else { 1 };
-            at = run(bytes, at + newline, |b| b == b'\t' || b == b' ');
-        } else if rest.first() == Some(&b'#') {
-            at = run(bytes, at + 1, |b| b != b'\n');
-        } else {
-            return at;
-        }
+        at = match &bytes[at..] {
+            [b'\n', ..] => run(bytes, at + 1, indent),
+            [b'\r', b'\n', ..] => run(bytes, at + 2, indent),
+            [b'#', ..] => run(bytes, at + 1, |b| b != b'\n'),
+            _ => return at,
+        };
     }
 }
 

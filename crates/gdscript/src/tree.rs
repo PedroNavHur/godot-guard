@@ -61,7 +61,7 @@ impl Node {
 
 impl Tree {
     /// Child trees, in order.
-    pub fn subtrees(&self) -> impl Iterator<Item = &Tree> {
+    pub fn subtrees(&self) -> impl DoubleEndedIterator<Item = &Tree> {
         self.children.iter().filter_map(Node::as_tree)
     }
 
@@ -80,8 +80,7 @@ impl<'a> Iterator for TopDown<'a> {
 
     fn next(&mut self) -> Option<&'a Tree> {
         let tree = self.stack.pop()?;
-        self.stack
-            .extend(tree.subtrees().collect::<Vec<_>>().into_iter().rev());
+        self.stack.extend(tree.subtrees().rev());
         Some(tree)
     }
 }

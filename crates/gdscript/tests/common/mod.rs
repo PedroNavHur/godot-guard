@@ -63,17 +63,18 @@ fn first_difference(ours: &Tree, theirs: &Tree, at: &str) -> Option<String> {
             theirs.children.len()
         ));
     }
-    for (index, (a, b)) in ours.children.iter().zip(&theirs.children).enumerate() {
-        let here = format!("{at}/{index}");
-        match (a, b) {
-            (Node::Tree(a), Node::Tree(b)) => {
-                if let Some(found) = first_difference(a, b, &format!("{here}:{}", a.data)) {
-                    return Some(found);
-                }
-            }
-            (a, b) if a != b => return Some(format!("{here}: ours {a:?}, gdtoolkit's {b:?}")),
-            _ => {}
-        }
+    ours.children
+        .iter()
+        .zip(&theirs.children)
+        .enumerate()
+        .find_map(|(index, (a, b))| child_difference(a, b, format!("{at}/{index}")))
+}
+
+/// Where two children differ, below `here`, or None when they are equal.
+fn child_difference(ours: &Node, theirs: &Node, here: String) -> Option<String> {
+    match (ours, theirs) {
+        (Node::Tree(a), Node::Tree(b)) => first_difference(a, b, &format!("{here}:{}", a.data)),
+        (a, b) if a != b => Some(format!("{here}: ours {a:?}, gdtoolkit's {b:?}")),
+        _ => None,
     }
-    None
 }

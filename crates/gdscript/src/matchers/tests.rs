@@ -87,15 +87,11 @@ fn can_start_admits_every_match() {
         "", "a", "1", "x1", "b0", "\"\"\"", "'''", "\"x\"", "'x'", "\n", " ", ".5", "e1", "ok]",
     ];
     let firsts = (0u8..128).map(char::from).chain(['é', '日', '\u{37a}']);
-    for first in firsts {
-        for suffix in suffixes {
-            let text = format!("{first}{suffix}");
-            let class = (text.as_bytes()[0] as usize).min(NON_ASCII);
-            for matcher in ALL {
-                if match_at(matcher, &text).is_some() {
-                    assert!(can_start(matcher, class), "{matcher:?} matches {text:?}");
-                }
-            }
+    let texts = firsts.flat_map(|first| suffixes.map(move |suffix| format!("{first}{suffix}")));
+    for text in texts {
+        let class = (text.as_bytes()[0] as usize).min(NON_ASCII);
+        for matcher in ALL.into_iter().filter(|&m| match_at(m, &text).is_some()) {
+            assert!(can_start(matcher, class), "{matcher:?} matches {text:?}");
         }
     }
 }

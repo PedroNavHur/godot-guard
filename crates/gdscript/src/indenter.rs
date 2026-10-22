@@ -109,14 +109,21 @@ impl<'s> Indenter<'s> {
             if self.finished {
                 return Ok(None);
             }
-            if let Some(kind) = self.pending_paren.take() {
-                self.count_paren(kind)?;
-            }
-            match lexer.lex(state)? {
-                Some(token) => self.process(token),
-                None => self.finish(),
-            }
+            self.pull(lexer, state)?;
         }
+    }
+
+    /// One more raw token through the indenter: count the previous one's brackets, then lex and process
+    /// the next, or finish at the end of the input.
+    fn pull(&mut self, lexer: &mut Lexer<'s>, state: u16) -> Result<(), ParseError> {
+        if let Some(kind) = self.pending_paren.take() {
+            self.count_paren(kind)?;
+        }
+        match lexer.lex(state)? {
+            Some(token) => self.process(token),
+            None => self.finish(),
+        }
+        Ok(())
     }
 
     fn count_paren(&mut self, kind: Symbol) -> Result<(), ParseError> {
@@ -261,17 +268,23 @@ impl<'s> Indenter<'s> {
             });
         } else if indent <= self.top() && self.in_multiline_lambda() {
             self.emit(token);
-            while indent < self.top() && self.in_multiline_lambda() {
-                self.indent_level.pop();
-                self.add_undedented(-1);
-                self.emit(self.line_dedent(&token));
-                if self.in_multiline_lambda() {
-                    self.emit(token);
-                }
-            }
+            self.dedent_lambdas_to(indent, token);
         }
         // Otherwise do nothing, as other expressions don't handle newlines.
         Ok(())
+    }
+
+    /// Close the multiline lambdas indented deeper than `indent`, each DEDENT followed by another NL while
+    /// a lambda is still open.
+    fn dedent_lambdas_to(&mut self, indent: usize, token: LexToken<'s>) {
+        while indent < self.top() && self.in_multiline_lambda() {
+            self.indent_level.pop();
+            self.add_undedented(-1);
+            self.emit(self.line_dedent(&token));
+            if self.in_multiline_lambda() {
+                self.emit(token);
+            }
+        }
     }
 
     fn top(&self) -> usize {
@@ -303,45 +316,57 @@ impl<'s> Indenter<'s> {
 
     /// Looking back from the newline: `func [NAME] ( … ) [-> TYPE_HINT] :` with only newlines between.
     fn current_token_is_just_after_lambda_header(&self) -> bool {
-        let t = &self.types;
         let mut extra_rpars = 0usize;
         let mut i = 0;
         for token in self.processed_tokens.iter().rev() {
             if i >= 4 {
                 return true;
             }
-            let kind = token.kind;
-            let pattern = match i {
-                0 => is(kind, t.colon),
-                1 => is(kind, t.rpar),
-                2 => is(kind, t.lpar) && extra_rpars == 0,
-                _ => is(kind, t.func),
-            };
-            if pattern {
+            if self.header_part(i, token.kind, extra_rpars) {
                 i += 1;
                 continue;
             }
-            let accept = match i {
-                0 => is(kind, t.nl),
-                1 => is(kind, t.nl) || is(kind, t.type_hint) || token.is_arrow,
-                2 => {
-                    if is(kind, t.rpar) {
-                        extra_rpars += 1;
-                    } else if is(kind, t.lpar) {
-                        if extra_rpars == 0 {
-                            return false;
-                        }
-                        extra_rpars -= 1;
-                    }
-                    true
-                }
-                _ => is(kind, t.nl) || is(kind, t.name),
-            };
-            if !accept {
+            if !self.may_skip(i, token, &mut extra_rpars) {
                 return false;
             }
         }
         i >= 4
+    }
+
+    /// gdtoolkit's `pattern_functions[i]`: whether `kind` is the `i`th token of the header, from the end.
+    fn header_part(&self, i: usize, kind: Symbol, extra_rpars: usize) -> bool {
+        let t = &self.types;
+        match i {
+            0 => is(kind, t.colon),
+            1 => is(kind, t.rpar),
+            2 => is(kind, t.lpar) && extra_rpars == 0,
+            _ => is(kind, t.func),
+        }
+    }
+
+    /// gdtoolkit's `accept_functions[i]`: whether `token` may sit between the header's `i`th and next part.
+    fn may_skip(&self, i: usize, token: &Processed, extra_rpars: &mut usize) -> bool {
+        let t = &self.types;
+        let kind = token.kind;
+        match i {
+            0 => is(kind, t.nl),
+            1 => is(kind, t.nl) || is(kind, t.type_hint) || token.is_arrow,
+            2 => self.lpar_accept(kind, extra_rpars),
+            _ => is(kind, t.nl) || is(kind, t.name),
+        }
+    }
+
+    /// gdtoolkit's `lpar_accept_function`: inside the parameters, track brackets nested in them.
+    fn lpar_accept(&self, kind: Symbol, extra_rpars: &mut usize) -> bool {
+        if is(kind, self.types.rpar) {
+            *extra_rpars += 1;
+        } else if is(kind, self.types.lpar) {
+            if *extra_rpars == 0 {
+                return false;
+            }
+            *extra_rpars -= 1;
+        }
+        true
     }
 }
 
