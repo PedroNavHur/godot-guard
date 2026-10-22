@@ -3,150 +3,345 @@ use crate::expression_utils::{
 };
 use crate::function_statement_to_str::function_statement_to_str;
 use crate::node::Ex;
+use gdscript::Token;
 
 pub fn standalone_expression_to_str(expression: &Ex) -> String {
     expression_to_str(&remove_outer_parentheses(expression))
 }
 
+/// A `handlers` dict value: the text of one kind of tree.
+type Handler = fn(&Ex) -> String;
+
+/// The names the Python's `handlers` dict maps to `_operator_chain_based_expression_to_str`.
+const OPERATOR_CHAIN_EXPRESSIONS: &[&str] = &[
+    "assnmnt_expr",
+    "test_expr",
+    "asless_test_expr",
+    "or_test",
+    "asless_or_test",
+    "and_test",
+    "asless_and_test",
+    "content_test",
+    "asless_content_test",
+    "comparison",
+    "asless_comparison",
+    "bitw_or",
+    "asless_bitw_or",
+    "bitw_xor",
+    "asless_bitw_xor",
+    "bitw_and",
+    "asless_bitw_and",
+    "shift_expr",
+    "asless_shift_expr",
+    "arith_expr",
+    "asless_arith_expr",
+    "mdr_expr",
+    "asless_mdr_expr",
+    "pow_expr",
+    "asless_pow_expr",
+    "type_test",
+    "asless_type_test",
+    "actual_type_cast",
+    "contextless_operator_chain_based_expression",
+    "test_pattern",
+    "or_pattern",
+    "and_pattern",
+    "comp_pattern",
+    "bitw_or_pattern",
+    "bitw_xor_pattern",
+    "bitw_and_pattern",
+    "shift_pattern",
+    "arith_pattern",
+    "mdr_pattern",
+];
+
+/// The rest of gdtoolkit's `handlers` dict of `expression_to_str`.
+const HANDLERS: &[(&str, Handler)] = &[
+    ("expr", expr_to_str),
+    ("asless_actual_not_test", not_test_to_str),
+    ("not_pattern", not_test_to_str),
+    ("not_in_op", not_in_op_to_str),
+    ("asless_actual_neg_expr", neg_expr_to_str),
+    ("neg_pattern", neg_expr_to_str),
+    ("asless_actual_bitw_not", bitw_not_to_str),
+    ("bitw_not_pattern", bitw_not_to_str),
+    ("await_expr", await_expr_to_str),
+    ("standalone_call", call_to_str),
+    ("getattr_call", call_to_str),
+    ("actual_getattr_call", call_to_str),
+    ("getattr", dot_chain_to_str),
+    ("non_foldable_dot_chain", dot_chain_to_str),
+    ("subscr_expr", subscription_to_str),
+    ("actual_subscr_expr", subscription_to_str),
+    ("par_expr", par_expr_to_str),
+    ("array", array_to_str),
+    ("array_pattern", array_to_str),
+    ("dict", dict_to_str),
+    ("dict_pattern", dict_to_str),
+    ("c_dict_element", c_dict_element_to_str),
+    ("eq_dict_element", eq_dict_element_to_str),
+    ("string", string_to_str),
+    ("rstring", rstring_to_str),
+    ("get_node", get_node_to_str),
+    ("path", path_to_str),
+    ("node_path", node_path_to_str),
+    ("unique_node_path", unique_node_path_to_str),
+    ("string_name", string_name_to_str),
+    ("lambda", lambda_to_str),
+    ("lambda_header", lambda_header_to_str),
+    // fake expressions:
+    ("func_args", args_to_str),
+    ("signal_args", args_to_str),
+    ("func_arg_variadic", func_arg_variadic_to_str),
+    ("func_arg_regular", func_arg_regular_to_str),
+    ("func_arg_inf", func_arg_inf_to_str),
+    ("func_arg_typed", func_arg_typed_to_str),
+    ("enum_body", enum_body_to_str),
+    ("enum_element", enum_element_to_str),
+    ("signal_arg_regular", signal_arg_regular_to_str),
+    ("signal_arg_typed", signal_arg_typed_to_str),
+    ("comma_separated_list", comma_separated_list_to_str),
+    (
+        "contextless_comma_separated_list",
+        comma_separated_list_to_str,
+    ),
+    ("trailing_comma", trailing_comma_to_str),
+    ("annotation", annotation_to_str),
+    ("annotation_args", annotation_args_to_str),
+    (
+        "property_custom_getter_args",
+        property_custom_getter_args_to_str,
+    ),
+    // patterns (fake expressions):
+    ("list_pattern", list_pattern_to_str),
+    ("attr_pattern", attr_pattern_to_str),
+    ("call_pattern", call_pattern_to_str),
+    ("par_pattern", par_pattern_to_str),
+    ("var_capture_pattern", var_capture_pattern_to_str),
+    ("etc_pattern", etc_pattern_to_str),
+    ("wildcard_pattern", wildcard_pattern_to_str),
+    ("kv_pair_pattern", kv_pair_pattern_to_str),
+];
+
+fn handler(data: &str) -> Option<Handler> {
+    if OPERATOR_CHAIN_EXPRESSIONS.contains(&data) {
+        return Some(operator_chain_based_expression_to_str);
+    }
+    HANDLERS
+        .iter()
+        .find(|(name, _)| *name == data)
+        .map(|(_, handler)| *handler)
+}
+
 pub fn expression_to_str(expression: &Ex) -> String {
     if let Some(token) = expression.token() {
-        return match token.kind {
-            "LONG_STRING" => long_string_to_str(&token.value),
-            "LONG_RSTRING" => long_rstring_to_str(&token.value),
-            "REGULAR_STRING" => regular_string_to_str(&token.value),
-            "REGULAR_RSTRING" => regular_rstring_to_str(&token.value),
-            _ => token.value.clone(),
-        };
+        return token_to_str(token);
     }
-    let e = expression;
-    let str_of = |index: isize| expression_to_str(&e.child(index));
-    let standalone_of = |index: isize| standalone_expression_to_str(&e.child(index));
-    let joined = |separator: &str, children: &[Ex]| {
-        children
-            .iter()
-            .map(expression_to_str)
-            .collect::<Vec<_>>()
-            .join(separator)
+    let Some(handler) = handler(expression.data()) else {
+        panic!("expression_to_str: no handler for {}", expression.data());
     };
-    match e.data() {
-        "expr" => standalone_of(0),
-        "assnmnt_expr"
-        | "test_expr"
-        | "asless_test_expr"
-        | "or_test"
-        | "asless_or_test"
-        | "and_test"
-        | "asless_and_test"
-        | "content_test"
-        | "asless_content_test"
-        | "comparison"
-        | "asless_comparison"
-        | "bitw_or"
-        | "asless_bitw_or"
-        | "bitw_xor"
-        | "asless_bitw_xor"
-        | "bitw_and"
-        | "asless_bitw_and"
-        | "shift_expr"
-        | "asless_shift_expr"
-        | "arith_expr"
-        | "asless_arith_expr"
-        | "mdr_expr"
-        | "asless_mdr_expr"
-        | "pow_expr"
-        | "asless_pow_expr"
-        | "type_test"
-        | "asless_type_test"
-        | "actual_type_cast"
-        | "contextless_operator_chain_based_expression"
-        | "test_pattern"
-        | "or_pattern"
-        | "and_pattern"
-        | "comp_pattern"
-        | "bitw_or_pattern"
-        | "bitw_xor_pattern"
-        | "bitw_and_pattern"
-        | "shift_pattern"
-        | "arith_pattern"
-        | "mdr_pattern" => operator_chain_based_expression_to_str(e),
-        "asless_actual_not_test" | "not_pattern" => {
-            let spacing = if e.child(0).value() == "!" { "" } else { " " };
-            format!("{}{spacing}{}", str_of(0), str_of(1))
-        }
-        "not_in_op" => "not in".to_owned(),
-        "asless_actual_neg_expr" | "neg_pattern" => format!("-{}", str_of(1)),
-        "asless_actual_bitw_not" | "bitw_not_pattern" => format!("~{}", str_of(1)),
-        "await_expr" => {
-            let children = e.children();
-            let (operand, awaits) = children.split_last().expect("empty await_expr");
-            let awaits: Vec<&str> = awaits.iter().map(Ex::value).collect();
-            format!("{} {}", awaits.join(" "), expression_to_str(operand))
-        }
-        "standalone_call" | "getattr_call" | "actual_getattr_call" => call_to_str(e),
-        "getattr" | "non_foldable_dot_chain" => joined("", &e.children()),
-        "subscr_expr" | "actual_subscr_expr" => {
-            format!("{}[{}]", str_of(0), standalone_of(1))
-        }
-        "par_expr" => format!("({})", standalone_of(0)),
-        "array" | "array_pattern" => array_to_str(e),
-        "dict" | "dict_pattern" => format!("{{{}}}", joined(", ", &e.children())),
-        "c_dict_element" => format!("{}: {}", standalone_of(0), standalone_of(1)),
-        "eq_dict_element" => format!("{} = {}", standalone_of(0), standalone_of(1)),
-        "string" => str_of(0),
-        "rstring" => format!("r{}", str_of(0)),
-        "get_node" => format!("${}", str_of(0)),
-        "path" => e.children().iter().map(Ex::value).collect(),
-        "node_path" => format!("^{}", str_of(0)),
-        "unique_node_path" => joined("", &e.children()),
-        "string_name" => format!("&{}", str_of(0)),
-        "lambda" => lambda_to_str(e),
-        "lambda_header" => lambda_header_to_str(e),
-        // fake expressions:
-        "func_args" | "signal_args" => format!("({})", joined(", ", &e.children())),
-        "func_arg_variadic" => format!("...{}", str_of(0)),
-        "func_arg_regular" => match e.len() > 1 {
-            true => format!("{} = {}", e.child(0).value(), standalone_of(1)),
-            false => e.child(0).value().to_owned(),
-        },
-        "func_arg_inf" => format!("{} := {}", e.child(0).value(), standalone_of(1)),
-        "func_arg_typed" => {
-            let default = match e.len() > 2 {
-                true => format!(" = {}", standalone_of(2)),
-                false => String::new(),
-            };
-            format!("{}: {}{default}", e.child(0).value(), e.child(1).value())
-        }
-        "enum_body" => match e.is_empty() {
-            true => "{}".to_owned(),
-            false => format!("{{ {} }}", joined(", ", &e.children())),
-        },
-        "enum_element" => match e.len() > 1 {
-            true => format!("{} = {}", standalone_of(0), standalone_of(1)),
-            false => standalone_of(0),
-        },
-        "signal_arg_regular" => e.child(0).value().to_owned(),
-        "signal_arg_typed" => format!("{}: {}", e.child(0).value(), e.child(1).value()),
-        "comma_separated_list" | "contextless_comma_separated_list" => {
-            arguments_to_str(&e.children())
-        }
-        "trailing_comma" => String::new(),
-        "annotation" => annotation_to_str(e),
-        "annotation_args" => annotation_args_to_str(e),
-        "property_custom_getter_args" => "()".to_owned(),
-        // patterns (fake expressions):
-        "list_pattern" => joined(", ", &e.children()),
-        "attr_pattern" => {
-            let names: Vec<Ex> = e.children().into_iter().step_by(2).collect();
-            joined(".", &names)
-        }
-        "call_pattern" => format!("{}({})", str_of(0), str_of(1)),
-        "par_pattern" => format!("({})", str_of(0)),
-        "var_capture_pattern" => format!("var {}", str_of(0)),
-        "etc_pattern" => "..".to_owned(),
-        "wildcard_pattern" => "_".to_owned(),
-        "kv_pair_pattern" => format!("{}: {}", str_of(0), str_of(1)),
-        other => panic!("expression_to_str: no handler for {other}"),
+    handler(expression)
+}
+
+/// gdtoolkit's `token_handlers`.
+fn token_to_str(token: &Token) -> String {
+    match token.kind {
+        "LONG_STRING" => long_string_to_str(&token.value),
+        "LONG_RSTRING" => long_rstring_to_str(&token.value),
+        "REGULAR_STRING" => regular_string_to_str(&token.value),
+        "REGULAR_RSTRING" => regular_rstring_to_str(&token.value),
+        _ => token.value.clone(),
     }
+}
+
+fn str_of(expression: &Ex, index: isize) -> String {
+    expression_to_str(&expression.child(index))
+}
+
+fn standalone_of(expression: &Ex, index: isize) -> String {
+    standalone_expression_to_str(&expression.child(index))
+}
+
+fn joined(separator: &str, children: &[Ex]) -> String {
+    children
+        .iter()
+        .map(expression_to_str)
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+fn expr_to_str(e: &Ex) -> String {
+    standalone_of(e, 0)
+}
+
+fn not_test_to_str(e: &Ex) -> String {
+    let spacing = if e.child(0).value() == "!" { "" } else { " " };
+    format!("{}{spacing}{}", str_of(e, 0), str_of(e, 1))
+}
+
+fn not_in_op_to_str(_: &Ex) -> String {
+    "not in".to_owned()
+}
+
+fn neg_expr_to_str(e: &Ex) -> String {
+    format!("-{}", str_of(e, 1))
+}
+
+fn bitw_not_to_str(e: &Ex) -> String {
+    format!("~{}", str_of(e, 1))
+}
+
+fn await_expr_to_str(e: &Ex) -> String {
+    let children = e.children();
+    let (operand, awaits) = children.split_last().expect("empty await_expr");
+    let awaits: Vec<&str> = awaits.iter().map(Ex::value).collect();
+    format!("{} {}", awaits.join(" "), expression_to_str(operand))
+}
+
+fn dot_chain_to_str(e: &Ex) -> String {
+    joined("", &e.children())
+}
+
+fn subscription_to_str(e: &Ex) -> String {
+    format!("{}[{}]", str_of(e, 0), standalone_of(e, 1))
+}
+
+fn par_expr_to_str(e: &Ex) -> String {
+    format!("({})", standalone_of(e, 0))
+}
+
+fn dict_to_str(e: &Ex) -> String {
+    format!("{{{}}}", joined(", ", &e.children()))
+}
+
+fn c_dict_element_to_str(e: &Ex) -> String {
+    format!("{}: {}", standalone_of(e, 0), standalone_of(e, 1))
+}
+
+fn eq_dict_element_to_str(e: &Ex) -> String {
+    format!("{} = {}", standalone_of(e, 0), standalone_of(e, 1))
+}
+
+fn string_to_str(e: &Ex) -> String {
+    str_of(e, 0)
+}
+
+fn rstring_to_str(e: &Ex) -> String {
+    format!("r{}", str_of(e, 0))
+}
+
+fn get_node_to_str(e: &Ex) -> String {
+    format!("${}", str_of(e, 0))
+}
+
+fn path_to_str(e: &Ex) -> String {
+    e.children().iter().map(Ex::value).collect()
+}
+
+fn node_path_to_str(e: &Ex) -> String {
+    format!("^{}", str_of(e, 0))
+}
+
+fn unique_node_path_to_str(e: &Ex) -> String {
+    joined("", &e.children())
+}
+
+fn string_name_to_str(e: &Ex) -> String {
+    format!("&{}", str_of(e, 0))
+}
+
+fn args_to_str(e: &Ex) -> String {
+    format!("({})", joined(", ", &e.children()))
+}
+
+fn func_arg_variadic_to_str(e: &Ex) -> String {
+    format!("...{}", str_of(e, 0))
+}
+
+fn func_arg_regular_to_str(e: &Ex) -> String {
+    if e.len() > 1 {
+        return format!("{} = {}", e.child(0).value(), standalone_of(e, 1));
+    }
+    e.child(0).value().to_owned()
+}
+
+fn func_arg_inf_to_str(e: &Ex) -> String {
+    format!("{} := {}", e.child(0).value(), standalone_of(e, 1))
+}
+
+fn func_arg_typed_to_str(e: &Ex) -> String {
+    let default = match e.len() > 2 {
+        true => format!(" = {}", standalone_of(e, 2)),
+        false => String::new(),
+    };
+    format!("{}: {}{default}", e.child(0).value(), e.child(1).value())
+}
+
+fn enum_body_to_str(e: &Ex) -> String {
+    if e.is_empty() {
+        return "{}".to_owned();
+    }
+    format!("{{ {} }}", joined(", ", &e.children()))
+}
+
+fn enum_element_to_str(e: &Ex) -> String {
+    if e.len() > 1 {
+        return format!("{} = {}", standalone_of(e, 0), standalone_of(e, 1));
+    }
+    standalone_of(e, 0)
+}
+
+fn signal_arg_regular_to_str(e: &Ex) -> String {
+    e.child(0).value().to_owned()
+}
+
+fn signal_arg_typed_to_str(e: &Ex) -> String {
+    format!("{}: {}", e.child(0).value(), e.child(1).value())
+}
+
+fn comma_separated_list_to_str(e: &Ex) -> String {
+    arguments_to_str(&e.children())
+}
+
+fn trailing_comma_to_str(_: &Ex) -> String {
+    String::new()
+}
+
+fn property_custom_getter_args_to_str(_: &Ex) -> String {
+    "()".to_owned()
+}
+
+fn list_pattern_to_str(e: &Ex) -> String {
+    joined(", ", &e.children())
+}
+
+fn attr_pattern_to_str(e: &Ex) -> String {
+    let names: Vec<Ex> = e.children().into_iter().step_by(2).collect();
+    joined(".", &names)
+}
+
+fn call_pattern_to_str(e: &Ex) -> String {
+    format!("{}({})", str_of(e, 0), str_of(e, 1))
+}
+
+fn par_pattern_to_str(e: &Ex) -> String {
+    format!("({})", str_of(e, 0))
+}
+
+fn var_capture_pattern_to_str(e: &Ex) -> String {
+    format!("var {}", str_of(e, 0))
+}
+
+fn etc_pattern_to_str(_: &Ex) -> String {
+    "..".to_owned()
+}
+
+fn wildcard_pattern_to_str(_: &Ex) -> String {
+    "_".to_owned()
+}
+
+fn kv_pair_pattern_to_str(e: &Ex) -> String {
+    format!("{}: {}", str_of(e, 0), str_of(e, 1))
 }
 
 fn operator_chain_based_expression_to_str(expression: &Ex) -> String {

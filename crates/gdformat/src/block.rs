@@ -15,72 +15,37 @@ pub fn format_block<'a>(
     context: &mut Context<'a>,
     surrounding_empty_lines_table: SurroundingEmptyLinesTable,
 ) -> Outcome {
-    let is_non_standalone_annotation_at_given_scope = |statement: &Ex| {
-        if !is_non_standalone_annotation(statement) {
-            return false;
-        }
-        !(statement_formatter == StatementFormatter::Func
-            && statement.child(0).value() == "warning_ignore")
-    };
-
     let mut previous_statement_name: Option<&'static str> = None;
     let mut formatted_lines = FormattedLines::new();
     let mut previously_processed_line_number = context.previously_processed_line_number;
 
     for (i, statement) in statements.iter().enumerate() {
-        // Check if this is an abstract annotation followed by an abstract function or class_name
-        let is_abstract_for_statement = statements
-            .get(i + 1)
-            .is_some_and(|next| is_abstract_annotation_for_statement(statement, next));
-        let is_pending_annotation =
-            is_non_standalone_annotation_at_given_scope(statement) || is_abstract_for_statement;
+        let blank_lines = |context: &Context| {
+            blank_lines_before(
+                previous_statement_name,
+                statement,
+                previously_processed_line_number,
+                context,
+                surrounding_empty_lines_table,
+            )
+        };
 
-        if is_pending_annotation {
+        if is_pending_annotation(statements, i, statement_formatter) {
             context.annotations.push(statement.clone());
-            if context.annotations.len() > 1 {
-                continue;
+            // Handle first annotation case
+            if context.annotations.len() == 1 {
+                formatted_lines.extend(blank_lines(context));
             }
-        }
-
-        let mut blank_lines = reconstruct_blank_lines_in_range(
-            previously_processed_line_number,
-            statement.line(),
-            context,
-        );
-        match previous_statement_name {
-            None => blank_lines = remove_empty_strings_from_begin(blank_lines),
-            Some(previous) => {
-                blank_lines = add_extra_blanks_due_to_previous_statement(
-                    blank_lines,
-                    previous,
-                    surrounding_empty_lines_table,
-                );
-                blank_lines = add_extra_blanks_due_to_next_statement(
-                    blank_lines,
-                    statement.data(),
-                    surrounding_empty_lines_table,
-                );
-            }
-        }
-
-        // Handle first annotation case
-        if is_pending_annotation && context.annotations.len() == 1 {
-            formatted_lines.extend(blank_lines);
             continue;
         }
 
         if context.annotations.is_empty() {
-            formatted_lines.extend(blank_lines);
+            formatted_lines.extend(blank_lines(context));
         }
 
-        let (mut lines, last_line) = statement_formatter.format(statement, context);
+        let (lines, last_line) = statement_formatter.format(statement, context);
         previously_processed_line_number = last_line;
-        if !context.annotations.is_empty() {
-            let rest = lines.split_off(1);
-            lines = prepend_annotations_to_formatted_line(lines.remove(0), context);
-            lines.extend(rest);
-        }
-        formatted_lines.extend(lines);
+        formatted_lines.extend(with_annotations(lines, context));
         previous_statement_name = Some(statement.data());
     }
 
@@ -94,6 +59,68 @@ pub fn format_block<'a>(
         ),
     ));
     (formatted_lines, dedent_line_number - 1)
+}
+
+fn is_non_standalone_annotation_at_given_scope(
+    statement: &Ex,
+    statement_formatter: StatementFormatter,
+) -> bool {
+    if !is_non_standalone_annotation(statement) {
+        return false;
+    }
+    !(statement_formatter == StatementFormatter::Func
+        && statement.child(0).value() == "warning_ignore")
+}
+
+fn is_pending_annotation(
+    statements: &[Ex],
+    index: usize,
+    statement_formatter: StatementFormatter,
+) -> bool {
+    let statement = &statements[index];
+    // Check if this is an abstract annotation followed by an abstract function or class_name
+    let is_abstract_for_statement = statements
+        .get(index + 1)
+        .is_some_and(|next| is_abstract_annotation_for_statement(statement, next));
+    is_non_standalone_annotation_at_given_scope(statement, statement_formatter)
+        || is_abstract_for_statement
+}
+
+fn blank_lines_before(
+    previous_statement_name: Option<&str>,
+    statement: &Ex,
+    previously_processed_line_number: i64,
+    context: &Context,
+    surrounding_empty_lines_table: SurroundingEmptyLinesTable,
+) -> FormattedLines {
+    let blank_lines = reconstruct_blank_lines_in_range(
+        previously_processed_line_number,
+        statement.line(),
+        context,
+    );
+    let Some(previous) = previous_statement_name else {
+        return remove_empty_strings_from_begin(blank_lines);
+    };
+    let blank_lines = add_extra_blanks_due_to_previous_statement(
+        blank_lines,
+        previous,
+        surrounding_empty_lines_table,
+    );
+    add_extra_blanks_due_to_next_statement(
+        blank_lines,
+        statement.data(),
+        surrounding_empty_lines_table,
+    )
+}
+
+fn with_annotations<'a>(mut lines: FormattedLines, context: &mut Context<'a>) -> FormattedLines {
+    if context.annotations.is_empty() {
+        return lines;
+    }
+    let rest = lines.split_off(1);
+    let mut annotated = prepend_annotations_to_formatted_line(lines.remove(0), context);
+    annotated.extend(rest);
+    annotated
 }
 
 pub fn reconstruct_blank_lines_in_range(begin: i64, end: i64, context: &Context) -> FormattedLines {
@@ -134,36 +161,37 @@ fn space_dedent_matches(line: &str, indent: usize) -> bool {
     leading < indent && leading < line.len()
 }
 
+/// The three break tests of `_find_dedent_line_number`'s forward scan, in the Python's order.
+fn ends_block(line: &str, indent: usize) -> bool {
+    if line.starts_with(' ') && space_dedent_matches(line, indent) {
+        return true;
+    }
+    if line.starts_with('\t') && tab_dedent_matches(line, indent) {
+        return true;
+    }
+    indent > 0 && !line.is_empty() && !line.starts_with([' ', '\t'])
+}
+
 // TODO: indent detection & refactoring
 fn find_dedent_line_number(previously_processed_line_number: i64, context: &Context) -> i64 {
     let lines = context.gdscript_code_lines;
     if previously_processed_line_number == lines.len() as i64 - 1 || context.indent == 0 {
         return lines.len() as i64;
     }
-    let mut line_no = previously_processed_line_number + 1;
-    let following = &lines[py::slice(lines.len(), Some(line_no), None)];
-    for line in following {
-        if line.starts_with(' ') && space_dedent_matches(line, context.indent) {
-            break;
-        }
-        if line.starts_with('\t') && tab_dedent_matches(line, context.indent) {
-            break;
-        }
-        if context.indent > 0 && !line.is_empty() && !line.starts_with([' ', '\t']) {
-            break;
-        }
-        line_no += 1;
-    }
+    let first = previously_processed_line_number + 1;
+    let following = &lines[py::slice(lines.len(), Some(first), None)];
+    let line_no = first
+        + following
+            .iter()
+            .take_while(|line| !ends_block(line, context.indent))
+            .count() as i64;
     // `lines[line_no - 1 :: -1]`
     let start = (line_no - 1).min(lines.len() as i64 - 1);
-    for index in (0..=start).rev() {
-        if py::strip(lines[index as usize]).is_empty() {
-            line_no -= 1;
-        } else {
-            break;
-        }
-    }
-    line_no
+    let blank_run = (0..=start)
+        .rev()
+        .take_while(|&index| py::strip(lines[index as usize]).is_empty())
+        .count();
+    line_no - blank_run as i64
 }
 
 fn add_extra_blanks_due_to_previous_statement(
