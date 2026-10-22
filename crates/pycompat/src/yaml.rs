@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use saphyr_parser::{Event, Parser, ScalarStyle, Tag};
 
-use crate::builtins::repr;
+use crate::builtins::{float_repr, repr};
 
 /// A value as PyYAML constructs it, in the Python types that matter to a config.
 #[derive(Clone, Debug, PartialEq)]
@@ -307,23 +307,6 @@ pub fn value_repr(value: &Value) -> String {
         // Python orders a set by hash, which varies per process for strings; this keeps the document's order.
         Value::Set(items) if items.is_empty() => "set()".into(),
         Value::Set(items) => format!("{{{}}}", join_repr(items.iter().map(value_repr))),
-    }
-}
-
-fn float_repr(x: f64) -> String {
-    if x.is_nan() {
-        return "nan".into();
-    }
-    if x.is_infinite() {
-        return if x > 0.0 { "inf".into() } else { "-inf".into() };
-    }
-    let text = format!("{x:?}");
-    // Rust writes 1e300 where Python writes 1e+300.
-    match text.split_once('e') {
-        Some((mantissa, exponent)) if !exponent.starts_with('-') => {
-            format!("{mantissa}e+{exponent}")
-        }
-        _ => text,
     }
 }
 

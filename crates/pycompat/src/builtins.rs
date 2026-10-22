@@ -121,9 +121,52 @@ pub fn universal_newlines(text: &str) -> String {
     }
 }
 
+fn non_finite_repr(number: f64) -> &'static str {
+    match number {
+        n if n.is_nan() => "nan",
+        n if n > 0.0 => "inf",
+        _ => "-inf",
+    }
+}
+
+/// `repr(float)`: the shortest round-trip digits, in exponent form below 1e-4 and from 1e16.
+pub fn float_repr(number: f64) -> String {
+    if !number.is_finite() {
+        return non_finite_repr(number).into();
+    }
+    let magnitude = number.abs();
+    if magnitude != 0.0 && !(1e-4..1e16).contains(&magnitude) {
+        let text = format!("{number:e}");
+        let (mantissa, exponent) = text.split_once('e').expect("exponent form");
+        let exponent: i32 = exponent.parse().expect("an exponent");
+        return format!(
+            "{mantissa}e{}{:02}",
+            if exponent < 0 { '-' } else { '+' },
+            exponent.abs()
+        );
+    }
+    let text = format!("{number}");
+    if text.contains('.') {
+        text
+    } else {
+        format!("{text}.0")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn float_repr_matches_python() {
+        assert_eq!(float_repr(1e-5), "1e-05");
+        assert_eq!(float_repr(0.0001), "0.0001");
+        assert_eq!(float_repr(1e16), "1e+16");
+        assert_eq!(float_repr(1e15), "1000000000000000.0");
+        assert_eq!(float_repr(1.5e300), "1.5e+300");
+        assert_eq!(float_repr(-2.0), "-2.0");
+        assert_eq!(float_repr(f64::NEG_INFINITY), "-inf");
+    }
 
     #[test]
     fn repr_matches_python() {

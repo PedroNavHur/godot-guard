@@ -44,7 +44,7 @@ impl Value {
             Value::Bool(true) => "True".into(),
             Value::Bool(false) => "False".into(),
             Value::Int(number) => number.to_string(),
-            Value::Float(number) => float_repr(*number),
+            Value::Float(number) => builtins::float_repr(*number),
             Value::Str(text) => builtins::repr(text),
             Value::Timestamp(text) => format!("datetime({})", builtins::repr(text)),
             Value::Seq(items) => format!("[{}]", join(items.iter().map(Value::py_repr))),
@@ -81,38 +81,6 @@ impl Value {
 
 fn join(parts: impl Iterator<Item = String>) -> String {
     parts.collect::<Vec<_>>().join(", ")
-}
-
-fn non_finite_repr(number: f64) -> &'static str {
-    match number {
-        n if n.is_nan() => "nan",
-        n if n > 0.0 => "inf",
-        _ => "-inf",
-    }
-}
-
-/// `repr(float)`: the shortest round-trip digits, in exponent form below 1e-4 and from 1e16.
-fn float_repr(number: f64) -> String {
-    if !number.is_finite() {
-        return non_finite_repr(number).into();
-    }
-    let magnitude = number.abs();
-    if magnitude != 0.0 && !(1e-4..1e16).contains(&magnitude) {
-        let text = format!("{number:e}");
-        let (mantissa, exponent) = text.split_once('e').expect("exponent form");
-        let exponent: i32 = exponent.parse().expect("an exponent");
-        return format!(
-            "{mantissa}e{}{:02}",
-            if exponent < 0 { '-' } else { '+' },
-            exponent.abs()
-        );
-    }
-    let text = format!("{number}");
-    if text.contains('.') {
-        text
-    } else {
-        format!("{text}.0")
-    }
 }
 
 /// A loading error: PyYAML's problem, and the 1-based line it points at.
