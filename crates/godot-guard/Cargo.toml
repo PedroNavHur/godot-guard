@@ -10,6 +10,7 @@ gdscript = { path = "../gdscript" }
 gdrules = { path = "../gdrules" }
 gdformat = { path = "../gdformat" }
 gdlint = { path = "../gdlint" }
+pycompat = { path = "../pycompat" }
 yaml-rust2 = "0.13.0"
 regex = "1.13.1"
 fancy-regex = "0.19.2"

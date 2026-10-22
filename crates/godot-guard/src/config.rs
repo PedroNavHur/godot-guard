@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{Failure, Result};
 use crate::fnmatch::Pattern;
 use crate::settings;
+use pycompat::builtins;
 
 pub const CONFIG_NAME: &str = ".godot-guard.yml";
 pub const BASELINE_NAME: &str = ".godot-guard-baseline.json";
@@ -305,7 +306,7 @@ pub fn load(start: &Path) -> Result<Config> {
     let path = config.root.join(CONFIG_NAME);
     let bytes = fs::read(&path).map_err(|e| Failure::crash(path.display(), e))?;
     let text = String::from_utf8(bytes).map_err(|e| Failure::crash(path.display(), e))?;
-    let data = crate::yaml::load(&crate::py::translate_newlines(&text))
+    let data = crate::yaml::load(&builtins::universal_newlines(&text))
         .map_err(|error| Failure::Config(format!("{CONFIG_NAME}: {error}")))?;
     settings::apply(&mut config, data)?;
     Ok(config)

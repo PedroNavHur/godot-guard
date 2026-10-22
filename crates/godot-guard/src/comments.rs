@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::py;
+use pycompat::string;
 
 fn compile(pattern: &str) -> Regex {
     Regex::new(pattern).expect("a valid built-in pattern")
@@ -54,7 +54,7 @@ impl Comment {
 }
 
 fn is_prose(text: &str) -> bool {
-    let text = py::strip(py::strip(text).trim_start_matches('*'));
+    let text = string::strip(string::strip(text).trim_start_matches('*'));
     !text.is_empty()
         && !(DIRECTIVE.is_match(text) || REFERENCE.is_match(text) || SEPARATOR.is_match(text))
 }
@@ -73,7 +73,7 @@ fn comment_runs(lines: &[&str]) -> Vec<Comment> {
     let mut in_run = false;
     for (index, raw) in lines.iter().enumerate() {
         let number = index + 1;
-        let Some(text) = comment_text(py::strip(raw)) else {
+        let Some(text) = comment_text(string::strip(raw)) else {
             in_run = false;
             continue;
         };
@@ -98,13 +98,13 @@ fn first_code_line(lines: &[&str], comments: &[Comment]) -> usize {
         .iter()
         .enumerate()
         .map(|(index, raw)| (index + 1, raw))
-        .find(|(number, raw)| !commented.contains(number) && !PREAMBLE.is_match(py::strip(raw)))
+        .find(|(number, raw)| !commented.contains(number) && !PREAMBLE.is_match(string::strip(raw)))
         .map_or(lines.len() + 1, |(number, _)| number)
 }
 
 /// Comments over `cap` prose lines, outside the file header block.
 pub fn long_comments(source: &str, cap: i64) -> Vec<Comment> {
-    let lines = py::splitlines(source);
+    let lines = string::splitlines(source);
     let comments = comment_runs(&lines);
     let first_code = first_code_line(&lines, &comments);
     comments

@@ -5,9 +5,9 @@ use crate::config::{AUTO, Boundary, CONFIG_NAME, Config, Jobs, Level, Limit, Tes
 use crate::error::{Failure, Result};
 use crate::fnmatch::Pattern;
 use crate::godot_warnings;
-use crate::py;
 use crate::yaml::Value;
 use gdrules::patterns::{ADVISORY as PATTERN_ADVISORY, COUNTED};
+use pycompat::{builtins, string};
 
 pub const DEFAULT_EXCLUDE: [&str; 2] = ["addons/**", ".godot/**"];
 pub const DEFAULT_RULES: [(&str, Level); 11] = [
@@ -141,7 +141,7 @@ fn whole_count(value: &Value) -> Option<usize> {
 }
 
 fn normalize(path: &str) -> String {
-    let mut path = py::strip(path).trim_end_matches('/');
+    let mut path = string::strip(path).trim_end_matches('/');
     while let Some(rest) = path.strip_prefix("./") {
         path = rest;
     }
@@ -204,7 +204,7 @@ fn glob(text: &str, setting: &str) -> Result<Pattern> {
     Pattern::new(text).map_err(|error| {
         fail(format!(
             "{setting}: bad pattern {}: {error}",
-            py::repr(text)
+            builtins::repr(text)
         ))
     })
 }
@@ -227,7 +227,7 @@ fn boundary(entry: &Value) -> Result<Boundary> {
         let compiled = fancy_regex::Regex::new(&pattern).map_err(|error| {
             Failure::Config(format!(
                 "{CONFIG_NAME}: boundary {name}: bad pattern {}: {error}",
-                py::repr(&pattern)
+                builtins::repr(&pattern)
             ))
         })?;
         forbid.push(compiled);
@@ -256,7 +256,7 @@ fn relaxed(value: &Value) -> Result<Vec<String>> {
         let message = || {
             format!(
                 "relaxed-warnings: {} is not a warning analyzer-config requires",
-                py::repr(name)
+                builtins::repr(name)
             )
         };
         expect(godot_warnings::is_required(name), message)?;

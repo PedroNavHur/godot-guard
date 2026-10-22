@@ -17,8 +17,8 @@ use crate::config::{Boundary, Config, Level, matches, walk_scripts};
 use crate::error::{Failure, Result};
 use crate::interface::{self, Surface};
 use crate::parse::Parsed;
-use crate::py;
 use crate::scripts::Scripts;
+use pycompat::string;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Problem {
@@ -275,7 +275,7 @@ fn comment_item(config: &Config, path: &str, source: &str) -> Item {
 
 fn boundary_problems(config: &Config, path: &str, source: &str) -> Result<Vec<Problem>> {
     let stripped = comments::strip_comments(source);
-    let lines = py::splitlines(&stripped);
+    let lines = string::splitlines(&stripped);
     let mut problems = Vec::new();
     for entry in config
         .boundaries

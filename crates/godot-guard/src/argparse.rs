@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::py;
+use pycompat::builtins;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Kind {
@@ -307,11 +307,11 @@ impl State<'_> {
                 .parser
                 .commands
                 .iter()
-                .map(|(command, _)| py::repr(command))
+                .map(|(command, _)| builtins::repr(command))
                 .collect();
             let message = format!(
                 "argument {dest}: invalid choice: {} (choose from {})",
-                py::repr(name),
+                builtins::repr(name),
                 names.join(", ")
             );
             return Err(self.parser.error(&message));
@@ -364,7 +364,7 @@ impl State<'_> {
         let message = format!(
             "argument {}: ignored explicit argument {}",
             opt.strings.join("/"),
-            py::repr(explicit)
+            builtins::repr(explicit)
         );
         self.parser.error(&message)
     }

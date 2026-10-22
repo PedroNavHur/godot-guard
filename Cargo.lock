@@ -177,6 +177,7 @@ dependencies = [
  "gdrules",
  "gdscript",
  "libc",
+ "pycompat",
  "rayon",
  "regex",
  "serde_json",

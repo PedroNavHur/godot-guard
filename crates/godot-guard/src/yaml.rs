@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::LazyLock;
 
+use pycompat::builtins;
 use regex::Regex;
 use yaml_rust2::parser::{Event, Parser, Tag};
 use yaml_rust2::scanner::{Marker, TScalarStyle};
@@ -44,8 +45,8 @@ impl Value {
             Value::Bool(false) => "False".into(),
             Value::Int(number) => number.to_string(),
             Value::Float(number) => float_repr(*number),
-            Value::Str(text) => crate::py::repr(text),
-            Value::Timestamp(text) => format!("datetime({})", crate::py::repr(text)),
+            Value::Str(text) => builtins::repr(text),
+            Value::Timestamp(text) => format!("datetime({})", builtins::repr(text)),
             Value::Seq(items) => format!("[{}]", join(items.iter().map(Value::py_repr))),
             Value::Map(entries) => {
                 format!(
@@ -437,7 +438,7 @@ fn construct(node: &Node) -> Value {
 fn unknown_tag(tag: &str) -> String {
     format!(
         "could not determine a constructor for the tag {}",
-        crate::py::repr(tag)
+        builtins::repr(tag)
     )
 }
 
@@ -450,8 +451,8 @@ fn scalar(text: &str, tag: &str) -> Result<Value, String> {
             text.to_lowercase().as_str(),
             "yes" | "true" | "on"
         ))),
-        "int" => int(text).ok_or_else(|| format!("invalid int {}", crate::py::repr(text))),
-        "float" => float(text).ok_or_else(|| format!("invalid float {}", crate::py::repr(text))),
+        "int" => int(text).ok_or_else(|| format!("invalid int {}", builtins::repr(text))),
+        "float" => float(text).ok_or_else(|| format!("invalid float {}", builtins::repr(text))),
         "timestamp" => Ok(Value::Timestamp(text.to_owned())),
         _ => Err(unknown()),
     }

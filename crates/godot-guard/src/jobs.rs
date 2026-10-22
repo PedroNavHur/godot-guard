@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Jobs;
 use crate::error::{Failure, Result};
+use pycompat::string;
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const PROC_CGROUP: &str = "/proc/self/cgroup";
@@ -33,7 +34,7 @@ pub fn usable_cpus() -> usize {
 /// This process's cgroup v2 path from the `0::/path` line; None where there is no v2 hierarchy.
 fn own_cgroup(proc_cgroup: &Path) -> Option<String> {
     let text = fs::read_to_string(proc_cgroup).ok()?;
-    crate::py::splitlines(&text)
+    string::splitlines(&text)
         .into_iter()
         .find_map(|line| line.strip_prefix("0::").map(str::to_owned))
 }

@@ -11,8 +11,8 @@ use regex::Regex;
 use crate::config::{Config, Level, matches};
 use crate::error::{Failure, Result};
 use crate::godot_warnings::{ERROR, REQUIRED};
-use crate::py;
 use crate::rules::Problem;
+use pycompat::{builtins, string};
 
 pub const PROJECT: &str = "project.godot";
 pub const RULE: &str = "analyzer-config";
@@ -40,7 +40,7 @@ type Finding = (usize, String);
 fn debug_lines(text: &str) -> Vec<(usize, &str)> {
     let mut inside = false;
     let mut found = Vec::new();
-    for (index, line) in py::splitlines(text).into_iter().enumerate() {
+    for (index, line) in string::splitlines(text).into_iter().enumerate() {
         if let Some(header) = SECTION.captures(line) {
             inside = &header[1] == "debug";
         }
@@ -157,7 +157,7 @@ pub fn problems(config: &Config) -> Result<Vec<Problem>> {
     if level == Level::Off || !path.is_file() {
         return Ok(Vec::new());
     }
-    let text = py::read_text(&path).map_err(|e| Failure::crash(path.display(), e))?;
+    let text = builtins::read_text_replace(&path).map_err(|e| Failure::crash(path.display(), e))?;
     let lines = debug_lines(&text);
     let header = lines.first().map_or(1, |(number, _)| *number);
     let mut found = findings(&read_settings(&lines), &config.relaxed_warnings, header);

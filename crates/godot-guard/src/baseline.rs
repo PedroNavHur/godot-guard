@@ -9,9 +9,9 @@ use gdrules::patterns::COUNTED;
 use crate::config::{BASELINE_NAME, Config, Level, Limit};
 use crate::error::{Failure, Result};
 use crate::json::{self, Json};
-use crate::py;
 use crate::rules::{FileResult, Item, Problem};
 use crate::settings::baselined;
+use pycompat::{builtins, string};
 
 const TREE_RULES: [&str; 2] = ["cognitive-complexity", "cyclomatic-complexity"];
 
@@ -138,7 +138,7 @@ pub fn write(path: &Path, data: &Data) -> Result<()> {
 
 fn entry_line(text: &str, key: &str) -> usize {
     let needle = json::quote(key) + ":";
-    py::splitlines(text)
+    string::splitlines(text)
         .iter()
         .position(|line| line.contains(&needle))
         .map_or(1, |index| index + 1)
@@ -271,7 +271,7 @@ impl<'a> Judge<'a> {
     fn gone(&self, rule: &'static str, key: &str) -> Problem {
         let message = format!(
             "baseline entry {} no longer exists: remove it with `godot-guard baseline`",
-            py::repr(key)
+            builtins::repr(key)
         );
         Problem::new(
             BASELINE_NAME,

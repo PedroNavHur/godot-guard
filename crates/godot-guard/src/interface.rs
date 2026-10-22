@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use gdrules::interface::{NOT_VARIABLES, is_export_annotation};
+use pycompat::string;
 use regex::Regex;
 
 const SETUP_METHODS: [&str; 3] = ["_init", "setup", "configure"];
@@ -85,7 +86,7 @@ fn split_top_level(text: &str) -> Vec<&str> {
     parts.push(&text[start..]);
     parts
         .into_iter()
-        .map(crate::py::strip)
+        .map(string::strip)
         .filter(|p| !p.is_empty())
         .collect()
 }

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 
 use crate::parse::{self, Parsed};
-use crate::py;
+use pycompat::builtins;
 
 #[derive(Default)]
 pub struct Scripts {
@@ -30,7 +30,7 @@ impl Scripts {
         if let Some(text) = self.texts.lock().expect("an unpoisoned lock").get(path) {
             return Ok(Arc::clone(text));
         }
-        let text: Arc<str> = py::read_text(path)?.into();
+        let text: Arc<str> = builtins::read_text_replace(path)?.into();
         let mut texts = self.texts.lock().expect("an unpoisoned lock");
         Ok(Arc::clone(texts.entry(path.to_path_buf()).or_insert(text)))
     }
