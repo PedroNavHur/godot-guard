@@ -243,6 +243,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pycompat"
+version = "0.5.0"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
