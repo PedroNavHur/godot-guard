@@ -15,7 +15,8 @@ the details).
   enclosing function's name and an ordinal among its anonymous lambdas
   (`outer.<lambda#2>`; `<lambda#1>` or `Inner.<lambda#1>` outside any
   function; `outer.named` for a named lambda). A name still repeated in one
-  file gets `#N` on every occurrence (`f#1`, `f#2`).
+  file gets `#N` on every occurrence (`f#1`, `f#2`). `complexity --json`
+  prints the same scores and names, without the `#N`.
 - **long-comment**: an unbroken run of own-line `#` comments with more than
   `comment-lines` prose lines. Exempt: `##` doc comments, trailing comments,
   the file header block above the first line of code (after

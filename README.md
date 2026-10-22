@@ -55,7 +55,14 @@ godot-guard baseline [--init [--force]]
 godot-guard format [FILE...]        # gdformat in write mode
 godot-guard run -- ARGS...          # Godot; fails on ERROR:, WARNING:, SCRIPT ERROR: lines
 godot-guard gate [--fast] [--staged | FILE...] [--jobs N|auto]
+godot-guard complexity --json FILE...  # every function's scores, for pedro-best-practices
 ```
+
+`complexity --json` reads no config: it scores exactly the files given and
+prints one JSON object, each path as given to its functions' `name`, `line`,
+`end_line`, `cyclomatic`, and `cognitive` (null for nested functions), or to
+`{"error": message}` for a file that doesn't read or parse. It exits 0 even
+then; a usage error exits 2.
 
 A directory argument stands for the scanned scripts below it. Hidden
 directories and `exclude` matches are never scanned, even when named as an
