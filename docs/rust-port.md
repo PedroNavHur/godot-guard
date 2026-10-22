@@ -39,6 +39,8 @@ total, and don't claim the shards' time as godot-guard's.
 | `gdscript` | `gdtoolkit/parser` (gdscript.lark, comments.lark, the indenter) | Same tree as `tools/oracle/dump_tree.py`, node for node, spans included; rejects the same files at the same line |
 | `gdformat` | `gdtoolkit/formatter` | Byte-identical output; same `--check` verdict and exit status |
 | `gdlint` | `gdtoolkit/linter`, `.gdlintrc` | Same problems, same order, same text, same exit status |
+| `gdrules` | godot-guard's `complexity.py`, `patterns.py`, and the part of `interface.py` they use | Same scores and pattern hits as 0.4.0 |
+| `pycompat` | The Python both tools rely on: built-ins (`repr`, text-mode `open`), `str` methods, `os.path.join` and `strerror`, gdtoolkit's `find_gd_files_from_paths`, PyYAML's `yaml.Loader` | What that Python does |
 | `godot-guard` | `src/godot_guard/*` | Same stdout, exit status, JSON output, baseline file, and Godot invocations |
 
 The tree is `gdscript::Tree`: lark's shape, rule and token names as lark
