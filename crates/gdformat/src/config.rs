@@ -2,7 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use yaml_rust2::{Yaml, YamlLoader};
+use gdlint::repr::value_repr;
+use gdlint::yaml::{self, Value};
 
 pub const CONFIG_FILE_NAME: &str = "gdformatrc";
 
@@ -58,30 +59,34 @@ pub fn load_config(path: Option<&Path>) -> Result<Config, String> {
 }
 
 pub fn parse_config(text: &str) -> Result<Config, String> {
-    let documents = YamlLoader::load_from_str(text).map_err(|e| e.to_string())?;
-    let Some(Yaml::Hash(entries)) = documents.into_iter().next() else {
+    let Some(Value::Dict(entries)) = yaml::load(text).map_err(|e| e.to_string())? else {
         return Err("the config is not a mapping".to_owned());
     };
     let mut config = Config::default();
     for (key, value) in entries {
-        match key.as_str() {
-            Some("excluded_directories") => config.excluded_directories = string_set(&value)?,
-            Some("safety_checks") => config.safety_checks = truthy(&value),
-            Some("use_spaces") => config.use_spaces = optional_count(&value)?,
-            Some("line_length") => {
-                config.line_length = value.as_i64().ok_or("line_length is not an integer")?
-            }
-            _ => {}
-        }
+        let Value::Str(name) = key else { continue };
+        read_entry(&mut config, &name, &value)?;
     }
     Ok(config)
 }
 
-/// `set(value)` of a list, or of a mapping's keys, as `yaml.dump` writes a set.
-fn string_set(value: &Yaml) -> Result<Vec<String>, String> {
-    let items: Vec<&Yaml> = match value {
-        Yaml::Array(items) => items.iter().collect(),
-        Yaml::Hash(entries) => entries.keys().collect(),
+/// The entry `name`, if gdformat reads it, as `__main__.py` uses its value.
+fn read_entry(config: &mut Config, name: &str, value: &Value) -> Result<(), String> {
+    match name {
+        "excluded_directories" => config.excluded_directories = string_set(value)?,
+        "safety_checks" => config.safety_checks = truthy(value),
+        "use_spaces" => config.use_spaces = optional_count(value)?,
+        "line_length" => config.line_length = integer(value)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// `set(value)` of a list, a set, or a mapping's keys, as `yaml.dump` writes a set.
+fn string_set(value: &Value) -> Result<Vec<String>, String> {
+    let items: Vec<&Value> = match value {
+        Value::List(items) | Value::Set(items) => items.iter().collect(),
+        Value::Dict(entries) => entries.iter().map(|(key, _)| key).collect(),
         _ => return Err("excluded_directories is not a list".to_owned()),
     };
     items
@@ -92,32 +97,40 @@ fn string_set(value: &Yaml) -> Result<Vec<String>, String> {
         .collect()
 }
 
-fn scalar_text(value: &Yaml) -> Option<String> {
+fn scalar_text(value: &Value) -> Option<String> {
     match value {
-        Yaml::String(text) | Yaml::Real(text) => Some(text.clone()),
-        Yaml::Integer(n) => Some(n.to_string()),
-        Yaml::Boolean(b) => Some(if *b { "True" } else { "False" }.to_owned()),
-        _ => None,
+        Value::Str(text) => Some(text.clone()),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => Some(value_repr(value)),
+        Value::List(_) | Value::Dict(_) | Value::Set(_) => None,
     }
 }
 
-fn truthy(value: &Yaml) -> bool {
+/// Python's truthiness of a value PyYAML built.
+fn truthy(value: &Value) -> bool {
     match value {
-        Yaml::Null | Yaml::BadValue => false,
-        Yaml::Boolean(b) => *b,
-        Yaml::Integer(n) => *n != 0,
-        Yaml::Real(text) => text.parse::<f64>().is_ok_and(|x| x != 0.0),
-        Yaml::String(text) => !text.is_empty(),
-        Yaml::Array(items) => !items.is_empty(),
-        Yaml::Hash(entries) => !entries.is_empty(),
-        Yaml::Alias(_) => true,
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Int(n) => *n != 0,
+        Value::Float(x) => *x != 0.0,
+        Value::Str(text) => !text.is_empty(),
+        Value::List(items) | Value::Set(items) => !items.is_empty(),
+        Value::Dict(entries) => !entries.is_empty(),
     }
 }
 
-fn optional_count(value: &Yaml) -> Result<Option<usize>, String> {
+/// `int` of a number PyYAML built; a bool is the int it subclasses.
+fn integer(value: &Value) -> Result<i64, String> {
     match value {
-        Yaml::Null => Ok(None),
-        Yaml::Integer(n) if *n > 0 => Ok(Some(*n as usize)),
+        Value::Int(n) => Ok(*n),
+        Value::Bool(b) => Ok(i64::from(*b)),
+        _ => Err("line_length is not an integer".to_owned()),
+    }
+}
+
+fn optional_count(value: &Value) -> Result<Option<usize>, String> {
+    match value {
+        Value::Null => Ok(None),
+        Value::Int(n) if *n > 0 => Ok(Some(*n as usize)),
         _ => Err("use_spaces is neither null nor a positive integer".to_owned()),
     }
 }
@@ -154,5 +167,22 @@ mod tests {
         assert_eq!(listed.excluded_directories, ["addons", ".git"]);
         let set = parse_config("excluded_directories: !!set\n  addons: null\n").unwrap();
         assert_eq!(set.excluded_directories, ["addons"]);
+    }
+
+    #[test]
+    fn yaml_1_1_words_read_as_pyyaml_reads_them() {
+        let config = parse_config("safety_checks: off\nline_length: 1_000\n").unwrap();
+        assert!(!config.safety_checks);
+        assert_eq!(config.line_length, 1000);
+        assert!(parse_config("safety_checks: yes\n").unwrap().safety_checks);
+        assert!(!parse_config("safety_checks: no\n").unwrap().safety_checks);
+    }
+
+    #[test]
+    fn a_line_length_that_is_not_an_integer_is_refused() {
+        assert_eq!(
+            parse_config("line_length: wide\n"),
+            Err("line_length is not an integer".to_owned())
+        );
     }
 }

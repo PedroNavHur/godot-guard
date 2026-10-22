@@ -153,6 +153,20 @@ fn cli_matches_gdformat() {
             parse_error: false,
         },
         Scenario {
+            name: "config-yaml-1.1",
+            project: fixtures.join("yaml11"),
+            args: &["--check", "."],
+            stdin: b"",
+            parse_error: false,
+        },
+        Scenario {
+            name: "empty-path",
+            project: fixtures.join("plain"),
+            args: &["--check", ""],
+            stdin: b"",
+            parse_error: false,
+        },
+        Scenario {
             name: "rejected",
             project: fixtures.join("broken"),
             args: &["--check", "."],
