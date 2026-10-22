@@ -31,12 +31,12 @@ no Python. Download a release build (Linux x86_64 or macOS arm64) onto PATH:
 
 ```
 curl --fail --location \
-  https://github.com/PedroNavHur/godot-guard/releases/download/v0.5.0/godot-guard-aarch64-apple-darwin.tar.gz \
+  https://github.com/PedroNavHur/godot-guard/releases/download/v0.6.0/godot-guard-aarch64-apple-darwin.tar.gz \
   | tar --extract --gzip --directory ~/.local/bin
 ```
 
 On Linux use `godot-guard-x86_64-unknown-linux-gnu.tar.gz`. Elsewhere, build
-it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.5.0 godot-guard`.
+it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.6.0 godot-guard`.
 Godot is found through `$GODOT`, `godot` or `godot4` on PATH, or
 `/Applications/Godot.app`.
 
