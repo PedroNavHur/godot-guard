@@ -1,14 +1,12 @@
 //! Finding, reading, and naming files as gdformat's Python does.
 
-use std::fs::{DirEntry, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::string::FromUtf8Error;
 
-/// `find_gd_files_from_paths`: each directory walked top-down for `.gd` files, in the order the
-/// filesystem lists them as `os.walk` does, skipping directories named in `excluded_directories`; any
-/// other path as given, the empty path included. Paths are relative to `cwd` as given, joined as
-/// `os.path.join` joins them.
+/// `find_gd_files_from_paths`: each path that is a directory, walked as `os.walk` walks it, top-down, in
+/// directory-listing order, not into symlinked or excluded directories; any other path as given.
 pub fn find_gd_files_from_paths(
     paths: &[String],
     excluded_directories: &[String],
@@ -25,37 +23,42 @@ pub fn find_gd_files_from_paths(
     files
 }
 
-fn walk(dir: &str, excluded_directories: &[String], cwd: &Path, files: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(cwd.join(dir)) else {
+fn walk(top: &str, excluded_directories: &[String], cwd: &Path, files: &mut Vec<String>) {
+    let Some((dirnames, gd_files)) = scandir(top, cwd) else {
         return;
     };
-    let mut subdirectories = Vec::new();
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !entry.path().is_dir() {
-            collect_script(dir, &name, files);
-        } else if descends(&entry, &name, excluded_directories) {
-            subdirectories.push(name);
+    files.extend(gd_files);
+    for dirname in dirnames
+        .iter()
+        .filter(|d| !excluded_directories.contains(d))
+    {
+        let new_path = join(top, dirname);
+        if !is_symlink(&cwd.join(&new_path)) {
+            walk(&new_path, excluded_directories, cwd, files);
         }
     }
-    for subdirectory in subdirectories {
-        walk(&join(dir, &subdirectory), excluded_directories, cwd, files);
-    }
 }
 
-/// A `.gd` file `name` found in `dir`, as `find_gd_files_from_paths` names it.
-fn collect_script(dir: &str, name: &str, files: &mut Vec<String>) {
-    if name.ends_with(".gd") {
-        files.push(join(dir, name));
+/// The subdirectory names of `top` and its `.gd` files as paths from `top`; None when it cannot be listed,
+/// as `os.walk` without `onerror` skips it.
+fn scandir(top: &str, cwd: &Path) -> Option<(Vec<String>, Vec<String>)> {
+    let entries = std::fs::read_dir(cwd.join(top)).ok()?;
+    let mut dirnames = Vec::new();
+    let mut gd_files = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // `DirEntry.is_dir()` follows symlinks, as `os.scandir`'s does.
+        if entry.path().is_dir() {
+            dirnames.push(name);
+        } else if name.ends_with(".gd") {
+            gd_files.push(join(top, &name));
+        }
     }
+    Some((dirnames, gd_files))
 }
 
-/// Whether `walk` goes into the directory `entry`: `os.walk` lists a symlink to a directory among the
-/// directories but does not descend into it, and the excluded names are pruned.
-fn descends(entry: &DirEntry, name: &str, excluded_directories: &[String]) -> bool {
-    let excluded = excluded_directories.iter().any(|excluded| excluded == name);
-    let symlink = entry.file_type().is_ok_and(|kind| kind.is_symlink());
-    !excluded && !symlink
+fn is_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
 }
 
 /// `os.path.join(a, b)` for a relative `b`.
