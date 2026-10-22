@@ -27,44 +27,57 @@ fn name_patterns_match_as_python_re_does() {
         .iter()
         .map(|n| n.as_str().unwrap())
         .collect();
-    let mut failures = Vec::new();
-    for case in fixture["cases"].as_array().unwrap() {
-        let pattern = case["pattern"].as_str().unwrap();
-        let compiled = FullMatch::new(pattern);
-        if case["error"].as_bool().unwrap() {
-            if compiled.is_ok() {
-                failures.push(format!(
-                    "{pattern:?}: Python refuses it ({}), the port accepts it",
-                    case["reason"]
-                ));
-            }
-            continue;
-        }
-        let compiled = match compiled {
-            Ok(compiled) => compiled,
-            Err(_) if UNSUPPORTED.contains(&pattern) => continue,
-            Err(error) => {
-                failures.push(format!(
-                    "{pattern:?}: Python accepts it, the port refuses it: {error}"
-                ));
-                continue;
-            }
-        };
-        assert!(
-            !UNSUPPORTED.contains(&pattern),
-            "{pattern:?} is listed unsupported but compiles"
-        );
-        let expected = case["matches"].as_str().unwrap().chars().map(|c| c == '1');
-        for (name, expected) in names.iter().zip(expected) {
-            if compiled.is_match(name) != expected {
-                failures.push(format!("{pattern:?} on {name:?}: Python says {expected}"));
-            }
-        }
-    }
+    let failures: Vec<String> = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|case| case_failures(case, &names))
+        .collect();
     assert!(
         failures.is_empty(),
         "{} disagreements:\n{}",
         failures.len(),
         failures.join("\n")
     );
+}
+
+/// Where the port and Python disagree about one fixture case: whether the pattern compiles, and which names
+/// it matches.
+fn case_failures(case: &Value, names: &[&str]) -> Vec<String> {
+    let pattern = case["pattern"].as_str().unwrap();
+    let compiled = FullMatch::new(pattern);
+    if case["error"].as_bool().unwrap() {
+        return refused_case_failures(case, pattern, compiled.is_ok());
+    }
+    let compiled = match compiled {
+        Ok(compiled) => compiled,
+        Err(_) if UNSUPPORTED.contains(&pattern) => return Vec::new(),
+        Err(error) => {
+            return vec![format!(
+                "{pattern:?}: Python accepts it, the port refuses it: {error}"
+            )];
+        }
+    };
+    assert!(
+        !UNSUPPORTED.contains(&pattern),
+        "{pattern:?} is listed unsupported but compiles"
+    );
+    let expected = case["matches"].as_str().unwrap().chars().map(|c| c == '1');
+    names
+        .iter()
+        .zip(expected)
+        .filter(|(name, expected)| compiled.is_match(name) != *expected)
+        .map(|(name, expected)| format!("{pattern:?} on {name:?}: Python says {expected}"))
+        .collect()
+}
+
+/// The failure of a case Python refuses, if the port accepts it.
+fn refused_case_failures(case: &Value, pattern: &str, port_accepts: bool) -> Vec<String> {
+    if !port_accepts {
+        return Vec::new();
+    }
+    vec![format!(
+        "{pattern:?}: Python refuses it ({}), the port accepts it",
+        case["reason"]
+    )]
 }
