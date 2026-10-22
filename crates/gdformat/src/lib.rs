@@ -31,7 +31,7 @@ mod statement_utils;
 mod types;
 mod var_statement;
 
-pub use files::read_text;
+pub use files::{ReadError, read_text};
 pub use formatter::format_code;
 pub use parse::{ParseFailure, parse_code};
 pub use safety_checks::{ParsedCode, SafetyError, SafetyViolation, check_formatting_safety};

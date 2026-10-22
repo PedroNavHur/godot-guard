@@ -1,13 +1,17 @@
 //! gdformat's command line (`gdtoolkit/formatter/__main__.py`), minus `--diff`.
 
+use std::any::Any;
 use std::fmt::Display;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
+use std::ops::AddAssign;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
+use gdlint::repr::str_repr;
+
 use crate::args::{Arguments, USAGE, parse_arguments};
-use crate::config::{CONFIG_FILE_NAME, DEFAULT_CONFIG_YAML, find_config_file, load_config};
-use crate::files::{find_gd_files_from_paths, py_repr, read_text, strerror};
+use crate::config::{CONFIG_FILE_NAME, Config, DEFAULT_CONFIG_YAML, find_config_file, load_config};
+use crate::files::{ReadError, find_gd_files_from_paths, path_under, read_text, strerror};
 use crate::formatter::format_code;
 use crate::parse::parse_code;
 use crate::safety_checks::{ParsedCode, SafetyError, SafetyViolation, check_formatting_safety};
@@ -26,7 +30,8 @@ pub struct Options {
 pub struct FileFormatting {
     pub success: bool,
     pub actually_formatted: bool,
-    /// The formatted code; the given code when formatting failed.
+    /// The formatted code; the given code when parsing failed, the unsafe output when a safety check
+    /// failed.
     pub formatted_code: String,
     /// What gdformat prints to stderr for this file when it fails, newline included.
     pub error_message: Option<String>,
@@ -159,66 +164,82 @@ pub struct Io<'a> {
     pub stderr: &'a mut dyn Write,
 }
 
-/// gdformat's `main`, run in `cwd`; returns the exit status.
-pub fn run(args: &[String], cwd: &Path, io: &mut Io) -> i32 {
+/// gdformat's `main`, run in `cwd`; returns the exit status, or the error writing to stdout. Writes to
+/// stderr are best-effort.
+pub fn run(args: &[String], cwd: &Path, io: &mut Io) -> io::Result<i32> {
     let arguments = match parse_arguments(args) {
         Ok(arguments) => arguments,
         Err(exit) => return exit.print(io),
     };
     if arguments.dump_default_config {
-        let path = cwd.join(CONFIG_FILE_NAME);
-        if path.is_file() {
-            let _ = writeln!(
-                io.stderr,
-                "AssertionError: {CONFIG_FILE_NAME} already exists"
-            );
-            return 1;
-        }
-        return match std::fs::write(&path, DEFAULT_CONFIG_YAML) {
-            Ok(()) => 0,
-            Err(error) => {
-                let _ = writeln!(io.stderr, "{}: {error}", path.display());
-                1
-            }
-        };
+        return Ok(dump_default_config(cwd, io));
     }
     if arguments.diff {
         let _ = writeln!(io.stderr, "gdformat: --diff is not supported by this port");
-        return 2;
+        return Ok(2);
     }
     let config = match load_config(find_config_file(cwd).as_deref()) {
         Ok(config) => config,
         Err(error) => {
             let _ = writeln!(io.stderr, "gdformat: cannot read the config: {error}");
-            return 1;
+            return Ok(1);
         }
     };
-    let options = Options {
-        line_length: arguments.line_length.unwrap_or(config.line_length),
-        spaces_for_indent: arguments.use_spaces.or(config.use_spaces),
-        safety_checks: !arguments.fast && config.safety_checks,
-    };
+    let options = resolve_options(&arguments, &config);
     let files = find_gd_files_from_paths(&arguments.paths, &config.excluded_directories, cwd);
     let outcome = catch_unwind(AssertUnwindSafe(|| match files.as_slice() {
         [only] if only == "-" => format_stdin(&options, io),
         _ => format_files(&files, &arguments, &options, cwd, io),
     }));
-    outcome.unwrap_or_else(|panic| {
-        let message = panic
-            .downcast_ref::<String>()
-            .cloned()
-            .or_else(|| panic.downcast_ref::<&str>().map(|s| (*s).to_owned()))
-            .unwrap_or_default();
-        let _ = writeln!(io.stderr, "Traceback: gdformat crashed: {message}");
-        1
-    })
+    let status = outcome.unwrap_or_else(|panic| Ok(report_crash(&*panic, io)))?;
+    io.stdout.flush()?;
+    Ok(status)
 }
 
-fn format_stdin(options: &Options, io: &mut Io) -> i32 {
+/// `--dump-default-config`: write `gdformatrc` in `cwd`; returns the exit status.
+fn dump_default_config(cwd: &Path, io: &mut Io) -> i32 {
+    let path = cwd.join(CONFIG_FILE_NAME);
+    if path.is_file() {
+        let _ = writeln!(
+            io.stderr,
+            "AssertionError: {CONFIG_FILE_NAME} already exists"
+        );
+        return 1;
+    }
+    match std::fs::write(&path, DEFAULT_CONFIG_YAML) {
+        Ok(()) => 0,
+        Err(error) => {
+            let _ = writeln!(io.stderr, "{}: {error}", path.display());
+            1
+        }
+    }
+}
+
+/// The command line over the config, for each option.
+fn resolve_options(arguments: &Arguments, config: &Config) -> Options {
+    Options {
+        line_length: arguments.line_length.unwrap_or(config.line_length),
+        spaces_for_indent: arguments.use_spaces.or(config.use_spaces),
+        safety_checks: !arguments.fast && config.safety_checks,
+    }
+}
+
+/// A panic while formatting is gdtoolkit's uncaught exception: say so, and exit 1.
+fn report_crash(panic: &(dyn Any + Send), io: &mut Io) -> i32 {
+    let message = panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+        .unwrap_or_default();
+    let _ = writeln!(io.stderr, "Traceback: gdformat crashed: {message}");
+    1
+}
+
+fn format_stdin(options: &Options, io: &mut Io) -> io::Result<i32> {
     let mut bytes = Vec::new();
     if let Err(error) = io.stdin.read_to_end(&mut bytes) {
         let _ = writeln!(io.stderr, "gdformat: cannot read STDIN: {error}");
-        return 1;
+        return Ok(1);
     }
     let code = crate::files::universal_newlines(&String::from_utf8_lossy(&bytes));
     let outcome = format_file(&code, options, "STDIN");
@@ -226,11 +247,34 @@ fn format_stdin(options: &Options, io: &mut Io) -> i32 {
         let _ = io.stderr.write_all(message.as_bytes());
     }
     if !outcome.success {
-        return 1;
+        return Ok(1);
     }
-    let _ = io.stdout.write_all(outcome.formatted_code.as_bytes());
-    0
+    io.stdout.write_all(outcome.formatted_code.as_bytes())?;
+    Ok(0)
 }
+
+/// What one file adds to the summary: the files in `formatted_files` and in `failed_files`.
+#[derive(Clone, Copy, Default)]
+struct Counts {
+    formatted: usize,
+    failed: usize,
+}
+
+impl AddAssign for Counts {
+    fn add_assign(&mut self, other: Counts) {
+        self.formatted += other.formatted;
+        self.failed += other.failed;
+    }
+}
+
+const FORMATTED: Counts = Counts {
+    formatted: 1,
+    failed: 0,
+};
+const FAILED: Counts = Counts {
+    formatted: 0,
+    failed: 1,
+};
 
 fn format_files(
     files: &[String],
@@ -238,54 +282,77 @@ fn format_files(
     options: &Options,
     cwd: &Path,
     io: &mut Io,
-) -> i32 {
-    let (mut formatted, mut failed) = (0, 0);
+) -> io::Result<i32> {
+    let mut total = Counts::default();
     for file_path in files {
-        let path = cwd.join(file_path);
-        let code = match read_text(&path, !arguments.check) {
-            Ok(code) => code,
-            Err(error) => {
-                let _ = writeln!(
-                    io.stderr,
-                    "Cannot open file {}: {}",
-                    py_repr(file_path),
-                    strerror(&error)
-                );
-                failed += 1;
-                continue;
-            }
-        };
-        let outcome = format_file(&code, options, file_path);
-        if let Some(message) = &outcome.error_message {
-            let _ = io.stderr.write_all(message.as_bytes());
-        }
-        if !outcome.success {
-            failed += 1;
-        } else if outcome.actually_formatted {
-            formatted += 1;
-            if arguments.check {
-                let _ = writeln!(io.stderr, "would reformat {file_path}");
-            } else {
-                let _ = writeln!(io.stdout, "reformatted {file_path}");
-                if let Err(error) = std::fs::write(&path, &outcome.formatted_code) {
-                    let _ = writeln!(
-                        io.stderr,
-                        "Cannot open file {}: {}",
-                        py_repr(file_path),
-                        strerror(&error)
-                    );
-                    failed += 1;
-                }
-            }
+        match format_one_file(file_path, arguments, options, cwd, io)? {
+            Some(counts) => total += counts,
+            None => return Ok(1),
         }
     }
     let summary = match arguments.check {
-        true => check_summary(files.len(), formatted, failed),
-        false => format_summary(files.len(), formatted, failed),
+        true => check_summary(files.len(), total.formatted, total.failed),
+        false => format_summary(files.len(), total.formatted, total.failed),
     };
-    let _ = io.stdout.write_all(summary.stdout.as_bytes());
+    io.stdout.write_all(summary.stdout.as_bytes())?;
     let _ = io.stderr.write_all(summary.stderr.as_bytes());
-    summary.exit_status
+    Ok(summary.exit_status)
+}
+
+/// `_check_files_formatting` and `_format_files` for one file: its share of the counts, or None when
+/// gdformat would stop with a traceback.
+fn format_one_file(
+    file_path: &str,
+    arguments: &Arguments,
+    options: &Options,
+    cwd: &Path,
+    io: &mut Io,
+) -> io::Result<Option<Counts>> {
+    let path = path_under(cwd, file_path);
+    let code = match read_text(&path, !arguments.check) {
+        Ok(code) => code,
+        Err(ReadError::Io(error)) => {
+            report_cannot_open(file_path, &error, io);
+            return Ok(Some(FAILED));
+        }
+        Err(ReadError::Utf8(error)) => {
+            let _ = writeln!(
+                io.stderr,
+                "{file_path}: UnicodeDecodeError: 'utf-8' codec can't decode the file: {error}"
+            );
+            return Ok(None);
+        }
+    };
+    let outcome = format_file(&code, options, file_path);
+    if let Some(message) = &outcome.error_message {
+        let _ = io.stderr.write_all(message.as_bytes());
+    }
+    if !outcome.success {
+        return Ok(Some(FAILED));
+    }
+    if !outcome.actually_formatted {
+        return Ok(Some(Counts::default()));
+    }
+    if arguments.check {
+        let _ = writeln!(io.stderr, "would reformat {file_path}");
+        return Ok(Some(FORMATTED));
+    }
+    writeln!(io.stdout, "reformatted {file_path}")?;
+    let mut counts = FORMATTED;
+    if let Err(error) = std::fs::write(&path, &outcome.formatted_code) {
+        report_cannot_open(file_path, &error, io);
+        counts += FAILED;
+    }
+    Ok(Some(counts))
+}
+
+fn report_cannot_open(file_path: &str, error: &io::Error, io: &mut Io) {
+    let _ = writeln!(
+        io.stderr,
+        "Cannot open file {}: {}",
+        str_repr(file_path),
+        strerror(error)
+    );
 }
 
 /// `parse_arguments` failed: docopt prints usage and exits 1, or prints help or the version and exits 0.
@@ -296,20 +363,91 @@ pub enum ArgumentsExit {
 }
 
 impl ArgumentsExit {
-    fn print(&self, io: &mut Io) -> i32 {
+    fn print(&self, io: &mut Io) -> io::Result<i32> {
         match self {
             ArgumentsExit::Usage(warning) => {
                 let _ = writeln!(io.stderr, "{warning}{USAGE}");
-                1
+                Ok(1)
             }
             ArgumentsExit::Help => {
-                let _ = writeln!(io.stdout, "{}", crate::args::HELP);
-                0
+                writeln!(io.stdout, "{}", crate::args::HELP)?;
+                Ok(0)
             }
             ArgumentsExit::Version => {
-                let _ = writeln!(io.stdout, "gdformat 4.5.0");
-                0
+                writeln!(io.stdout, "gdformat 4.5.0")?;
+                Ok(0)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn run_with(args: &[&str], cwd: &Path, stdin: &[u8], stdout: &mut dyn Write) -> (String, i32) {
+        let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let mut stderr = Vec::new();
+        let mut stdin = stdin;
+        let status = run(
+            &args,
+            cwd,
+            &mut Io {
+                stdin: &mut stdin,
+                stdout,
+                stderr: &mut stderr,
+            },
+        )
+        .unwrap_or(-1);
+        (String::from_utf8(stderr).unwrap(), status)
+    }
+
+    #[test]
+    fn a_script_that_is_not_utf8_stops_the_run() {
+        let dir = std::env::temp_dir().join(format!("gdformat-utf8-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.gd"), b"var x = \xe9\n").unwrap();
+        std::fs::write(dir.join("b.gd"), "func f(a,b):\n\treturn a+b\n").unwrap();
+        let (stderr, status) = run_with(&["a.gd", "b.gd"], &dir, b"", &mut Vec::new());
+        let untouched = std::fs::read_to_string(dir.join("b.gd")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(status, 1);
+        assert!(stderr.starts_with("a.gd: UnicodeDecodeError:"), "{stderr}");
+        assert_eq!(untouched, "func f(a,b):\n\treturn a+b\n");
+    }
+
+    #[test]
+    fn a_failed_write_to_stdout_is_the_error() {
+        let result = run(
+            &["-".to_owned()],
+            Path::new("/"),
+            &mut Io {
+                stdin: &mut &b"var x = 1\n"[..],
+                stdout: &mut ClosedPipe,
+                stderr: &mut Vec::new(),
+            },
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn a_file_name_prints_as_python_prints_it() {
+        let (stderr, _) = run_with(&["-c", "a\u{a0}.gd"], Path::new("/"), b"", &mut Vec::new());
+        assert!(
+            stderr.starts_with("Cannot open file 'a\\xa0.gd': No such file or directory\n"),
+            "{stderr}"
+        );
     }
 }

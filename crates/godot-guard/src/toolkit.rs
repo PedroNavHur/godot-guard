@@ -25,13 +25,19 @@ impl Write for Merged<'_> {
     }
 }
 
-/// Run `command` on (stdout, stderr), merged into `echo` line by line when there is one.
-fn streams<T>(echo: Option<Echo>, command: impl FnOnce(&mut dyn Write, &mut dyn Write) -> T) -> T {
+/// Run `command` on (stdout, stderr), merged into `echo` line by line when there is one. A write it
+/// fails, or the terminal's final flush failing for any reason but a closed pipe, is the error.
+fn streams(
+    echo: Option<Echo>,
+    command: impl FnOnce(&mut dyn Write, &mut dyn Write) -> io::Result<i32>,
+) -> io::Result<i32> {
     let Some(echo) = echo else {
         let (mut out, mut err) = (io::stdout().lock(), io::stderr().lock());
         let result = command(&mut out, &mut err);
-        let _ = out.flush();
-        return result;
+        return match out.flush() {
+            Err(error) if error.kind() != io::ErrorKind::BrokenPipe => Err(error),
+            _ => result,
+        };
     };
     let buffer = RefCell::new(Vec::new());
     let result = command(&mut Merged(&buffer), &mut Merged(&buffer));
@@ -52,7 +58,7 @@ pub fn gdlint(args: &[String], root: &Path, echo: Option<Echo>) -> Result<i32> {
 /// `gdformat ARGS` in `root`; it reads no stdin when captured.
 pub fn gdformat(args: &[String], root: &Path, echo: Option<Echo>) -> Result<i32> {
     let captured = echo.is_some();
-    Ok(streams(echo, |stdout, stderr| {
+    streams(echo, |stdout, stderr| {
         let (mut piped, mut terminal) = (io::empty(), io::stdin());
         let stdin: &mut dyn io::Read = if captured { &mut piped } else { &mut terminal };
         gdformat::cli::run(
@@ -64,5 +70,6 @@ pub fn gdformat(args: &[String], root: &Path, echo: Option<Echo>) -> Result<i32>
                 stderr,
             },
         )
-    }))
+    })
+    .map_err(|e| Failure::crash("writing gdformat's output", e))
 }
