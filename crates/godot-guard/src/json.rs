@@ -37,31 +37,41 @@ fn write_value(out: &mut String, value: &Json, depth: usize, sort: bool) {
     match value {
         Json::Int(number) => write!(out, "{number}").expect("writing to a String"),
         Json::Str(text) => write_string(out, text),
-        Json::List(items) if items.is_empty() => out.push_str("[]"),
-        Json::List(items) => {
-            out.push('[');
-            for (index, item) in items.iter().enumerate() {
-                separate(out, index, depth + 1);
-                write_value(out, item, depth + 1, sort);
-            }
-            close(out, depth, ']');
-        }
-        Json::Object(entries) if entries.is_empty() => out.push_str("{}"),
-        Json::Object(entries) => {
-            let mut ordered: Vec<&(String, Json)> = entries.iter().collect();
-            if sort {
-                ordered.sort_by(|a, b| a.0.cmp(&b.0));
-            }
-            out.push('{');
-            for (index, (key, item)) in ordered.into_iter().enumerate() {
-                separate(out, index, depth + 1);
-                write_string(out, key);
-                out.push_str(": ");
-                write_value(out, item, depth + 1, sort);
-            }
-            close(out, depth, '}');
-        }
+        Json::List(items) => write_list(out, items, depth, sort),
+        Json::Object(entries) => write_object(out, entries, depth, sort),
     }
+}
+
+fn write_list(out: &mut String, items: &[Json], depth: usize, sort: bool) {
+    if items.is_empty() {
+        out.push_str("[]");
+        return;
+    }
+    out.push('[');
+    for (index, item) in items.iter().enumerate() {
+        separate(out, index, depth + 1);
+        write_value(out, item, depth + 1, sort);
+    }
+    close(out, depth, ']');
+}
+
+fn write_object(out: &mut String, entries: &[(String, Json)], depth: usize, sort: bool) {
+    if entries.is_empty() {
+        out.push_str("{}");
+        return;
+    }
+    let mut ordered: Vec<&(String, Json)> = entries.iter().collect();
+    if sort {
+        ordered.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+    out.push('{');
+    for (index, (key, item)) in ordered.into_iter().enumerate() {
+        separate(out, index, depth + 1);
+        write_string(out, key);
+        out.push_str(": ");
+        write_value(out, item, depth + 1, sort);
+    }
+    close(out, depth, '}');
 }
 
 fn separate(out: &mut String, index: usize, depth: usize) {

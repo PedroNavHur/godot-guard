@@ -112,31 +112,53 @@ impl Parser {
 
     /// `_get_option_tuples`: the options `text` abbreviates.
     fn abbreviations(&self, text: &str) -> Vec<Found> {
-        let mut found = Vec::new();
-        let long = text.starts_with("--");
-        let (prefix, explicit) = match text.split_once('=') {
-            Some((prefix, value)) if long => (prefix, Some(value.to_owned())),
-            _ => (text, None),
-        };
-        for (index, opt) in self.options.iter().enumerate() {
-            for string in opt.strings {
-                if long {
-                    if string.starts_with(prefix) {
-                        found.push((Some(index), string.to_string(), explicit.clone()));
-                    }
-                } else if text.get(..2) == Some(*string) {
-                    let rest = &text[2..];
-                    found.push((
-                        Some(index),
-                        string.to_string(),
-                        (!rest.is_empty()).then(|| rest.to_owned()),
-                    ));
-                } else if string.starts_with(text) {
-                    found.push((Some(index), string.to_string(), None));
-                }
-            }
+        if !text.starts_with("--") {
+            return self.short_abbreviations(text);
         }
-        found
+        match text.split_once('=') {
+            Some((prefix, value)) => self.long_abbreviations(prefix, Some(value)),
+            None => self.long_abbreviations(text, None),
+        }
+    }
+
+    /// Every option string, with the index of its option.
+    fn option_strings(&self) -> impl Iterator<Item = (usize, &'static str)> + '_ {
+        let strings = |(index, opt): (usize, &Opt)| opt.strings.iter().map(move |s| (index, *s));
+        self.options.iter().enumerate().flat_map(strings)
+    }
+
+    fn long_abbreviations(&self, prefix: &str, explicit: Option<&str>) -> Vec<Found> {
+        self.option_strings()
+            .filter(|(_, string)| string.starts_with(prefix))
+            .map(|(index, string)| (Some(index), string.to_owned(), explicit.map(str::to_owned)))
+            .collect()
+    }
+
+    fn short_abbreviations(&self, text: &str) -> Vec<Found> {
+        let short_match = |(index, string): (usize, &'static str)| {
+            if text.get(..2) == Some(string) {
+                let rest = &text[2..];
+                let explicit = (!rest.is_empty()).then(|| rest.to_owned());
+                return Some((Some(index), string.to_owned(), explicit));
+            }
+            string
+                .starts_with(text)
+                .then(|| (Some(index), string.to_owned(), None))
+        };
+        self.option_strings().filter_map(short_match).collect()
+    }
+
+    /// The one option `text` abbreviates; several is an error.
+    fn one_abbreviation(&self, text: &str) -> Result<Option<Found>, Exit> {
+        let mut found = self.abbreviations(text);
+        if found.len() > 1 {
+            let names: Vec<&str> = found.iter().map(|(_, string, _)| string.as_str()).collect();
+            return Err(self.error(&format!(
+                "ambiguous option: {text} could match {}",
+                names.join(", ")
+            )));
+        }
+        Ok(found.pop())
     }
 
     /// `_parse_optional`: None for a positional.
@@ -159,15 +181,7 @@ impl Parser {
                 Some(value.to_owned()),
             )));
         }
-        let mut found = self.abbreviations(text);
-        if found.len() > 1 {
-            let names: Vec<&str> = found.iter().map(|(_, string, _)| string.as_str()).collect();
-            return Err(self.error(&format!(
-                "ambiguous option: {text} could match {}",
-                names.join(", ")
-            )));
-        }
-        if let Some(one) = found.pop() {
+        if let Some(one) = self.one_abbreviation(text)? {
             return Ok(Some(one));
         }
         if NEGATIVE.is_match(text) || text.contains(' ') {
@@ -319,14 +333,6 @@ impl State<'_> {
         let stop = loop {
             let opt = &self.parser.options[index];
             let takes_value = matches!(opt.kind, Kind::Value(_));
-            let ignored = |explicit: &str| {
-                let message = format!(
-                    "argument {}: ignored explicit argument {}",
-                    opt.strings.join("/"),
-                    py::repr(explicit)
-                );
-                self.parser.error(&message)
-            };
             match explicit {
                 Some(value) if takes_value => {
                     taken.push((index, vec![value]));
@@ -335,26 +341,11 @@ impl State<'_> {
                 // `-hx`: a single-dash flag followed by more single-dash flags.
                 Some(rest) if string.as_bytes()[1] != b'-' => {
                     taken.push((index, Vec::new()));
-                    let first = rest.chars().next().expect("a nonempty explicit argument");
-                    let next = format!("-{first}");
-                    let Some(found) = self.parser.lookup(&next) else {
-                        return Err(ignored(&rest));
-                    };
-                    let remainder = &rest[first.len_utf8()..];
-                    (index, string, explicit) = (
-                        found,
-                        next,
-                        (!remainder.is_empty()).then(|| remainder.to_owned()),
-                    );
+                    (index, string, explicit) = self.next_short_flag(opt, &rest)?;
                 }
-                Some(value) => return Err(ignored(&value)),
+                Some(value) => return Err(self.ignored(opt, &value)),
                 None if takes_value => {
-                    if self.pattern.get(start + 1) != Some(&b'A') {
-                        let message =
-                            format!("argument {}: expected one argument", opt.strings.join("/"));
-                        return Err(self.parser.error(&message));
-                    }
-                    taken.push((index, vec![self.args[start + 1].clone()]));
+                    taken.push((index, vec![self.take_argument(start, opt)?]));
                     break start + 2;
                 }
                 None => {
@@ -367,6 +358,43 @@ impl State<'_> {
             self.take(index, values)?;
         }
         Ok(stop)
+    }
+
+    fn ignored(&self, opt: &Opt, explicit: &str) -> Exit {
+        let message = format!(
+            "argument {}: ignored explicit argument {}",
+            opt.strings.join("/"),
+            py::repr(explicit)
+        );
+        self.parser.error(&message)
+    }
+
+    /// `-hx`: the flag after `opt`, and what follows it.
+    fn next_short_flag(
+        &self,
+        opt: &Opt,
+        rest: &str,
+    ) -> Result<(usize, String, Option<String>), Exit> {
+        let first = rest.chars().next().expect("a nonempty explicit argument");
+        let next = format!("-{first}");
+        let Some(found) = self.parser.lookup(&next) else {
+            return Err(self.ignored(opt, rest));
+        };
+        let remainder = &rest[first.len_utf8()..];
+        Ok((
+            found,
+            next,
+            (!remainder.is_empty()).then(|| remainder.to_owned()),
+        ))
+    }
+
+    /// The argument that follows an option string.
+    fn take_argument(&self, start: usize, opt: &Opt) -> Result<String, Exit> {
+        if self.pattern.get(start + 1) != Some(&b'A') {
+            let message = format!("argument {}: expected one argument", opt.strings.join("/"));
+            return Err(self.parser.error(&message));
+        }
+        Ok(self.args[start + 1].clone())
     }
 
     fn take(&mut self, index: usize, values: Vec<String>) -> Result<(), Exit> {

@@ -182,21 +182,28 @@ pub fn parse(path: &str, source: &str) -> Surface {
         }
         read_header(&mut surface, line);
         pending = read_exports(&mut surface, line, pending);
-        if let Some(function) = FUNCTION.captures(line)
-            && SETUP_METHODS.contains(&&function[1])
-        {
-            let names = parameters_after(source, found.start());
-            match surface
-                .parameters
-                .iter_mut()
-                .find(|(method, _)| method == &function[1])
-            {
-                Some((_, existing)) => *existing = names,
-                None => surface.parameters.push((function[1].to_owned(), names)),
-            }
-        }
+        read_setup(&mut surface, source, line, found.start());
     }
     surface
+}
+
+/// Record the parameters of a setup method defined on `line`, which starts at `start` in `source`.
+fn read_setup(surface: &mut Surface, source: &str, line: &str, start: usize) {
+    let Some(function) = FUNCTION.captures(line) else {
+        return;
+    };
+    if !SETUP_METHODS.contains(&&function[1]) {
+        return;
+    }
+    let names = parameters_after(source, start);
+    match surface
+        .parameters
+        .iter_mut()
+        .find(|(method, _)| method == &function[1])
+    {
+        Some((_, existing)) => *existing = names,
+        None => surface.parameters.push((function[1].to_owned(), names)),
+    }
 }
 
 /// Whether the script's `extends` chain reaches `Resource` through `class_name`s or res:// paths.
