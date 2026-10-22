@@ -160,63 +160,83 @@ impl PartialEq for Loose {
     }
 }
 
+/// The `asless_X` trees `LoosenTreeTransformer` renames to `X`: gdtoolkit's `asless_X = X` aliases.
+const ASLESS: &[(&str, &str)] = &[
+    ("asless_comparison", "comparison"),
+    ("asless_and_test", "and_test"),
+    ("asless_or_test", "or_test"),
+    ("asless_bitw_or", "bitw_or"),
+    ("asless_bitw_xor", "bitw_xor"),
+    ("asless_bitw_and", "bitw_and"),
+    ("asless_shift_expr", "shift_expr"),
+    ("asless_type_test", "type_test"),
+    ("asless_content_test", "content_test"),
+    ("asless_test_expr", "test_expr"),
+    ("asless_arith_expr", "arith_expr"),
+    ("asless_mdr_expr", "mdr_expr"),
+    ("asless_pow_expr", "pow_expr"),
+];
+
+fn loosened_name(data: &'static str) -> &'static str {
+    ASLESS
+        .iter()
+        .find(|(asless, _)| *asless == data)
+        .map_or(data, |(_, name)| name)
+}
+
+fn tree_of(data: &'static str, children: Vec<Loose>) -> Loose {
+    Loose::Tree { data, children }
+}
+
+fn without_annotations(args: Vec<Loose>) -> Vec<Loose> {
+    args.into_iter()
+        .filter(|arg| {
+            !matches!(
+                arg,
+                Loose::Tree {
+                    data: "annotation" | "property_body_def",
+                    ..
+                }
+            )
+        })
+        .collect()
+}
+
+fn asless_actual_neg_expr(tree: &Tree, args: Vec<Loose>) -> Loose {
+    match &args[1] {
+        Loose::Token {
+            kind: "NUMBER",
+            value,
+        } => Loose::Token {
+            kind: "NUMBER",
+            value: format!("-{value}"),
+        },
+        _ => tree_of(tree.data, args),
+    }
+}
+
+fn string(tree: &Tree) -> Loose {
+    let token = tree.children[0].as_token().expect("string without a token");
+    Loose::Str(expression_to_str(&Ex::Token(token)))
+}
+
+fn signal_stmt(mut args: Vec<Loose>) -> Loose {
+    if args.len() > 1 && matches!(&args[1], Loose::Tree { children, .. } if children.is_empty()) {
+        args.pop();
+    }
+    tree_of("signal_stmt", args)
+}
+
 fn loosen_tree(tree: &Tree) -> Loose {
     let args: Vec<Loose> = tree.children.iter().map(loosen).collect();
-    let tree_of = |data: &'static str, children: Vec<Loose>| Loose::Tree { data, children };
-    let without_annotations = |args: Vec<Loose>| {
-        args.into_iter()
-            .filter(|arg| {
-                !matches!(
-                    arg,
-                    Loose::Tree {
-                        data: "annotation" | "property_body_def",
-                        ..
-                    }
-                )
-            })
-            .collect()
-    };
     match tree.data {
         "par_expr" | "par_pattern" => args.into_iter().next().expect("empty parentheses"),
-        "asless_actual_neg_expr" => match &args[1] {
-            Loose::Token {
-                kind: "NUMBER",
-                value,
-            } => Loose::Token {
-                kind: "NUMBER",
-                value: format!("-{value}"),
-            },
-            _ => tree_of(tree.data, args),
-        },
-        "asless_comparison" => tree_of("comparison", args),
-        "asless_and_test" => tree_of("and_test", args),
-        "asless_or_test" => tree_of("or_test", args),
-        "asless_bitw_or" => tree_of("bitw_or", args),
-        "asless_bitw_xor" => tree_of("bitw_xor", args),
-        "asless_bitw_and" => tree_of("bitw_and", args),
-        "asless_shift_expr" => tree_of("shift_expr", args),
-        "asless_type_test" => tree_of("type_test", args),
-        "asless_content_test" => tree_of("content_test", args),
-        "asless_test_expr" => tree_of("test_expr", args),
-        "asless_arith_expr" => tree_of("arith_expr", args),
-        "asless_mdr_expr" => tree_of("mdr_expr", args),
-        "asless_pow_expr" => tree_of("pow_expr", args),
-        "string" | "rstring" => {
-            let token = tree.children[0].as_token().expect("string without a token");
-            Loose::Str(expression_to_str(&Ex::Token(token)))
-        }
-        "signal_stmt" => {
-            let mut args = args;
-            if args.len() > 1
-                && matches!(&args[1], Loose::Tree { children, .. } if children.is_empty())
-            {
-                args.pop();
-            }
-            tree_of("signal_stmt", args)
-        }
+        "asless_actual_neg_expr" => asless_actual_neg_expr(tree, args),
+        "string" | "rstring" => string(tree),
+        "signal_stmt" => signal_stmt(args),
         "start" | "class_def" => tree_of(tree.data, without_annotations(args)),
         "inline_property_body" => tree_of("inline_property_body", Vec::new()),
-        _ => tree_of(tree.data, args),
+        data => tree_of(loosened_name(data), args),
     }
 }
 

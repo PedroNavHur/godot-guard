@@ -31,47 +31,101 @@ impl StatementFormatter {
     }
 }
 
+/// A `handlers` dict value: formats one kind of statement.
+pub type StatementHandler = for<'a> fn(&Ex<'a>, &mut Context<'a>) -> Outcome;
+
+/// gdtoolkit's `handlers` dict of `format_func_statement`; the `partial(...)` entries are closures.
+const HANDLERS: &[(&str, StatementHandler)] = &[
+    ("pass_stmt", |statement, context| {
+        format_simple_statement("pass", statement, context)
+    }),
+    ("func_var_stmt", |statement, context| {
+        format_var_statement(statement, context, "")
+    }),
+    ("const_stmt", |statement, context| {
+        format_const_statement(statement, context)
+    }),
+    ("expr_stmt", |statement, context| {
+        format_expr_statement(statement, context)
+    }),
+    ("return_stmt", |statement, context| {
+        format_return_statement(statement, context)
+    }),
+    ("break_stmt", |statement, context| {
+        format_simple_statement("break", statement, context)
+    }),
+    ("breakpoint_stmt", |statement, context| {
+        format_simple_statement("breakpoint", statement, context)
+    }),
+    ("continue_stmt", |statement, context| {
+        format_simple_statement("continue", statement, context)
+    }),
+    ("if_stmt", |statement, context| {
+        format_if_statement(statement, context)
+    }),
+    ("while_stmt", |statement, context| {
+        format_branch("while ", ":", Some(0), statement, context)
+    }),
+    ("for_stmt", |statement, context| {
+        format_for_statement(statement, context)
+    }),
+    ("for_stmt_typed", |statement, context| {
+        format_for_statement_typed(statement, context)
+    }),
+    ("match_stmt", |statement, context| {
+        format_match_statement(statement, context)
+    }),
+    ("annotation", |statement, context| {
+        format_standalone_annotation(statement, context)
+    }),
+    // fake statements:
+    ("match_branch", |statement, context| {
+        format_match_branch(statement, context)
+    }),
+    ("guarded_match_branch", |statement, context| {
+        format_guarded_match_branch(statement, context)
+    }),
+];
+
 pub fn format_func_statement<'a>(statement: &Ex<'a>, context: &mut Context<'a>) -> Outcome {
-    match statement.data() {
-        "pass_stmt" => format_simple_statement("pass", statement, context),
-        "func_var_stmt" => format_var_statement(statement, context, ""),
-        "const_stmt" => format_const_statement(statement, context),
-        "expr_stmt" => format_expr_statement(statement, context),
-        "return_stmt" => format_return_statement(statement, context),
-        "break_stmt" => format_simple_statement("break", statement, context),
-        "breakpoint_stmt" => format_simple_statement("breakpoint", statement, context),
-        "continue_stmt" => format_simple_statement("continue", statement, context),
-        "if_stmt" => format_if_statement(statement, context),
-        "while_stmt" => format_branch("while ", ":", Some(0), statement, context),
-        "for_stmt" => {
-            let prefix = format!("for {} in ", statement.child(0).value());
-            format_branch(&prefix, ":", Some(1), statement, context)
-        }
-        "for_stmt_typed" => {
-            let prefix = format!(
-                "for {}: {} in ",
-                statement.child(0).value(),
-                statement.child(1).value()
-            );
-            format_branch(&prefix, ":", Some(2), statement, context)
-        }
-        "match_stmt" => format_branch("match ", ":", Some(0), statement, context),
-        "annotation" => format_standalone_annotation(statement, context),
-        // fake statements:
-        "match_branch" => format_branch("", ":", Some(0), statement, context),
-        "guarded_match_branch" => {
-            // TODO: fold pattern as well
-            let pattern_str = expression_to_str(&statement.child(0).child(0));
-            format_branch(
-                &format!("{pattern_str} when "),
-                ":",
-                Some(1),
-                statement,
-                context,
-            )
-        }
-        other => panic!("format_func_statement: no handler for {other}"),
-    }
+    let Some((_, handler)) = HANDLERS.iter().find(|(name, _)| *name == statement.data()) else {
+        panic!("format_func_statement: no handler for {}", statement.data());
+    };
+    handler(statement, context)
+}
+
+fn format_for_statement<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
+    let prefix = format!("for {} in ", statement.child(0).value());
+    format_branch(&prefix, ":", Some(1), statement, context)
+}
+
+fn format_for_statement_typed<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
+    let prefix = format!(
+        "for {}: {} in ",
+        statement.child(0).value(),
+        statement.child(1).value()
+    );
+    format_branch(&prefix, ":", Some(2), statement, context)
+}
+
+fn format_match_statement<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
+    format_branch("match ", ":", Some(0), statement, context)
+}
+
+fn format_match_branch<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
+    format_branch("", ":", Some(0), statement, context)
+}
+
+fn format_guarded_match_branch<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
+    // TODO: fold pattern as well
+    let pattern_str = expression_to_str(&statement.child(0).child(0));
+    format_branch(
+        &format!("{pattern_str} when "),
+        ":",
+        Some(1),
+        statement,
+        context,
+    )
 }
 
 fn format_expr_statement<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {

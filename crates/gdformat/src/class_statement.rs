@@ -5,7 +5,7 @@ use crate::constants::default_surrounding_empty_lines;
 use crate::context::{Context, ExpressionContext};
 use crate::expression::format_concrete_expression;
 use crate::expression_to_str::expression_to_str;
-use crate::function_statement::StatementFormatter;
+use crate::function_statement::{StatementFormatter, StatementHandler};
 use crate::node::Ex;
 use crate::property::{
     append_property_body_to_formatted_line, format_property_body, has_inline_property_body,
@@ -14,39 +14,80 @@ use crate::statement_utils::format_simple_statement;
 use crate::types::Outcome;
 use crate::var_statement::format_var_statement;
 
+/// gdtoolkit's `handlers` dict of `format_class_statement`; the `partial(...)` entries are closures.
+const HANDLERS: &[(&str, StatementHandler)] = &[
+    ("pass_stmt", |statement, context| {
+        format_simple_statement("pass", statement, context)
+    }),
+    ("enum_stmt", |statement, context| {
+        format_enum_statement(statement, context)
+    }),
+    ("signal_stmt", |statement, context| {
+        format_signal_statement(statement, context)
+    }),
+    ("extends_stmt", |statement, context| {
+        format_extends_statement(statement, context)
+    }),
+    ("classname_stmt", |statement, context| {
+        format_classname_statement(statement, context)
+    }),
+    ("classname_extends_stmt", |statement, context| {
+        format_classname_extends_statement(statement, context)
+    }),
+    ("class_var_stmt", |statement, context| {
+        format_class_var_statement(statement, context, "")
+    }),
+    ("static_class_var_stmt", |statement, context| {
+        format_class_var_statement(&statement.child(0), context, "static ")
+    }),
+    ("const_stmt", |statement, context| {
+        format_const_statement(statement, context)
+    }),
+    ("docstr_stmt", |statement, context| {
+        format_docstr_statement(statement, context)
+    }),
+    ("class_def", |statement, context| {
+        format_class_def(statement, context)
+    }),
+    ("func_def", |statement, context| {
+        format_func_def(statement, context, "")
+    }),
+    ("static_func_def", |statement, context| {
+        format_func_def(&statement.child(0), context, "static ")
+    }),
+    ("abstract_func_def", |statement, context| {
+        format_abstract_func_header(&statement.child(0), context)
+    }),
+    ("annotation", |statement, context| {
+        format_standalone_annotation(statement, context)
+    }),
+    ("property_body_def", |statement, context| {
+        format_property_body(statement, context)
+    }),
+];
+
 pub fn format_class_statement<'a>(statement: &Ex<'a>, context: &mut Context<'a>) -> Outcome {
-    match statement.data() {
-        "pass_stmt" => format_simple_statement("pass", statement, context),
-        "enum_stmt" => format_enum_statement(statement, context),
-        "signal_stmt" => format_signal_statement(statement, context),
-        "extends_stmt" => format_extends_statement(statement, context),
-        "classname_stmt" => {
-            let line = format!(
-                "{}class_name {}",
-                context.indent_string,
-                statement.child(0).value()
-            );
-            (vec![(Some(statement.line()), line)], statement.line())
-        }
-        "classname_extends_stmt" => format_classname_extends_statement(statement, context),
-        "class_var_stmt" => format_class_var_statement(statement, context, ""),
-        "static_class_var_stmt" => {
-            format_class_var_statement(&statement.child(0), context, "static ")
-        }
-        "const_stmt" => format_const_statement(statement, context),
-        "docstr_stmt" => {
-            let expression_context =
-                ExpressionContext::new("", statement.line(), "", statement.end_line());
-            format_concrete_expression(&statement.child(0), &expression_context, context)
-        }
-        "class_def" => format_class_def(statement, context),
-        "func_def" => format_func_def(statement, context, ""),
-        "static_func_def" => format_func_def(&statement.child(0), context, "static "),
-        "abstract_func_def" => format_abstract_func_header(&statement.child(0), context),
-        "annotation" => format_standalone_annotation(statement, context),
-        "property_body_def" => format_property_body(statement, context),
-        other => panic!("format_class_statement: no handler for {other}"),
-    }
+    let Some((_, handler)) = HANDLERS.iter().find(|(name, _)| *name == statement.data()) else {
+        panic!(
+            "format_class_statement: no handler for {}",
+            statement.data()
+        );
+    };
+    handler(statement, context)
+}
+
+fn format_classname_statement(statement: &Ex, context: &Context) -> Outcome {
+    let line = format!(
+        "{}class_name {}",
+        context.indent_string,
+        statement.child(0).value()
+    );
+    (vec![(Some(statement.line()), line)], statement.line())
+}
+
+fn format_docstr_statement<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
+    let expression_context = ExpressionContext::new("", statement.line(), "", statement.end_line());
+    format_concrete_expression(&statement.child(0), &expression_context, context)
 }
 
 fn format_signal_statement<'a>(statement: &Ex<'a>, context: &Context<'a>) -> Outcome {
