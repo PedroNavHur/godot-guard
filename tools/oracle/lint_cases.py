@@ -12,16 +12,21 @@ import pathlib
 import sys
 
 
+def candidates(node):
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return node.elts
+    if isinstance(node, ast.Call):
+        return node.args[:1]
+    return []
+
+
 def snippets(tree):
     for node in ast.walk(tree):
-        candidates = []
-        if isinstance(node, (ast.List, ast.Tuple)):
-            candidates = node.elts
-        elif isinstance(node, ast.Call) and node.args:
-            candidates = node.args[:1]
-        for candidate in candidates:
-            if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str):
-                yield candidate.value
+        yield from (
+            candidate.value
+            for candidate in candidates(node)
+            if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str)
+        )
 
 
 def main():

@@ -197,15 +197,27 @@ fn parse_argv(argv: &[String]) -> Result<Vec<Item>, String> {
         } else if token.starts_with("--") {
             let (opt, value) = parse_longer(token, &mut tokens, &mut options)?;
             parsed.push(Item::Option(opt, value));
-        } else if token.starts_with('-') && token != "-" && !is_a_number(token) {
-            for short in token.chars().skip(1) {
-                parsed.push(parse_short(&format!("-{short}"), &mut options));
-            }
+        } else if is_short_cluster(token) {
+            parsed.extend(parse_shorts(token, &mut options));
         } else {
             parsed.push(Item::Argument(token.clone()));
         }
     }
     Ok(parsed)
+}
+
+/// Whether `token` is `-` followed by short options, not `-`, a negative number or a long option.
+fn is_short_cluster(token: &str) -> bool {
+    token.starts_with('-') && token != "-" && !is_a_number(token)
+}
+
+/// The `-x` items of a cluster like `-dv`.
+fn parse_shorts(token: &str, options: &mut Vec<Opt>) -> Vec<Item> {
+    token
+        .chars()
+        .skip(1)
+        .map(|short| parse_short(&format!("-{short}"), options))
+        .collect()
 }
 
 fn parse_longer<'a>(

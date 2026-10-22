@@ -112,57 +112,90 @@ fn duplicated_load_check(subtrees: &[&Tree]) -> Vec<Problem> {
 fn unused_argument_check(subtrees: &[&Tree]) -> Vec<Problem> {
     let mut problems = Vec::new();
     for func_def in find_data(subtrees, "func_def") {
-        let func_header = child_tree(func_def, 0);
-        let Some(Node::Tree(func_args)) = func_header.children.get(1) else {
+        let Some(func_args) = func_args_of(func_def) else {
             continue;
         };
-        if func_args.data != "func_args" {
-            continue;
+        problems.extend(unused_arguments(func_def, func_args));
+    }
+    problems
+}
+
+fn func_args_of(func_def: &Tree) -> Option<&Tree> {
+    let func_header = child_tree(func_def, 0);
+    match func_header.children.get(1) {
+        Some(Node::Tree(func_args)) if func_args.data == "func_args" => Some(func_args),
+        _ => None,
+    }
+}
+
+/// The arguments a function defines: Python's dicts keep first-insertion order, `order` does that here.
+struct ArgumentDefinitions<'a> {
+    order: Vec<&'a str>,
+    counts: HashMap<&'a str, usize>,
+    tokens: HashMap<&'a str, &'a Token>,
+}
+
+fn argument_definitions(func_args: &Tree) -> ArgumentDefinitions<'_> {
+    let mut definitions = ArgumentDefinitions {
+        order: Vec::new(),
+        counts: HashMap::new(),
+        tokens: HashMap::new(),
+    };
+    let func_arg_trees = func_args
+        .children
+        .iter()
+        .filter_map(Node::as_tree)
+        .filter(|func_arg| func_arg.data != "trailing_comma");
+    for func_arg in func_arg_trees {
+        let holder = argument_holder(func_arg);
+        let arg_name_token = find_name_token_among_children(holder)
+            .unwrap_or_else(|| panic!("{} has no name token", holder.data));
+        let arg_name = arg_name_token.value.as_str();
+        let count = definitions.counts.entry(arg_name).or_insert(0);
+        if *count == 0 {
+            definitions.order.push(arg_name);
         }
-        // Python's dicts keep first-insertion order; `order` does that here.
-        let mut order: Vec<&str> = Vec::new();
-        let mut argument_definitions: HashMap<&str, usize> = HashMap::new();
-        let mut argument_tokens: HashMap<&str, &Token> = HashMap::new();
-        for func_arg in func_args.children.iter().filter_map(Node::as_tree) {
-            if func_arg.data == "trailing_comma" {
-                continue;
-            }
-            let holder = if func_arg.data == "func_arg_variadic" {
-                child_tree(func_arg, 0)
-            } else {
-                func_arg
-            };
-            let arg_name_token = find_name_token_among_children(holder)
-                .unwrap_or_else(|| panic!("{} has no name token", holder.data));
-            let arg_name = arg_name_token.value.as_str();
-            let count = argument_definitions.entry(arg_name).or_insert(0);
-            if *count == 0 {
-                order.push(arg_name);
-            }
-            *count += 1;
-            argument_tokens.insert(arg_name, arg_name_token);
-        }
-        let mut name_occurances: HashMap<&str, usize> = HashMap::new();
-        for xnode in func_def.iter_topdown() {
-            for node in xnode.children.iter().filter_map(Node::as_token) {
-                if node.kind == "NAME" {
-                    *name_occurances.entry(node.value.as_str()).or_insert(0) += 1;
-                }
-            }
-        }
-        for argument in order {
-            let occurrences = *name_occurances
-                .get(argument)
-                .unwrap_or_else(|| panic!("KeyError: argument {argument:?} is not a NAME token"));
-            if argument_definitions[argument] == occurrences && !argument.starts_with('_') {
-                let token = argument_tokens[argument];
-                problems.push(Problem {
-                    name: "unused-argument",
-                    description: format!("unused function argument '{argument}'"),
-                    line: token.span.line,
-                    column: token.span.column,
-                });
-            }
+        *count += 1;
+        definitions.tokens.insert(arg_name, arg_name_token);
+    }
+    definitions
+}
+
+fn argument_holder(func_arg: &Tree) -> &Tree {
+    match func_arg.data {
+        "func_arg_variadic" => child_tree(func_arg, 0),
+        _ => func_arg,
+    }
+}
+
+fn name_occurrences(func_def: &Tree) -> HashMap<&str, usize> {
+    let mut occurrences: HashMap<&str, usize> = HashMap::new();
+    let name_tokens = func_def
+        .iter_topdown()
+        .flat_map(|xnode| xnode.children.iter().filter_map(Node::as_token))
+        .filter(|node| node.kind == "NAME");
+    for node in name_tokens {
+        *occurrences.entry(node.value.as_str()).or_insert(0) += 1;
+    }
+    occurrences
+}
+
+fn unused_arguments(func_def: &Tree, func_args: &Tree) -> Vec<Problem> {
+    let definitions = argument_definitions(func_args);
+    let occurrences = name_occurrences(func_def);
+    let mut problems = Vec::new();
+    for argument in definitions.order {
+        let occurred = *occurrences
+            .get(argument)
+            .unwrap_or_else(|| panic!("KeyError: argument {argument:?} is not a NAME token"));
+        if definitions.counts[argument] == occurred && !argument.starts_with('_') {
+            let token = definitions.tokens[argument];
+            problems.push(Problem {
+                name: "unused-argument",
+                description: format!("unused function argument '{argument}'"),
+                line: token.span.line,
+                column: token.span.column,
+            });
         }
     }
     problems

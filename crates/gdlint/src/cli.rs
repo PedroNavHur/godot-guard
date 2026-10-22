@@ -74,33 +74,34 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> io::Result<i32> {
-    let (paths, verbose) = match docopt::parse(argv) {
+    match docopt::parse(argv) {
         Command::Help => {
             writeln!(out, "{}", docopt::DOC)?;
-            return Ok(0);
+            Ok(0)
         }
         Command::Version => {
             writeln!(out, "{VERSION}")?;
-            return Ok(0);
+            Ok(0)
         }
         Command::Usage(message) => {
             writeln!(err, "{message}")?;
-            return Ok(1);
+            Ok(1)
         }
-        Command::Dump => return dump_default_config(cwd, err),
-        Command::Lint { paths, verbose } => (paths, verbose),
-    };
-    let mut log_failure = None;
-    let mut log = |message: String| {
-        if verbose && log_failure.is_none() {
-            log_failure = writeln!(out, "INFO:root:{message}").err();
-        }
-    };
-    let config = load_config_logged(cwd, &mut log);
-    if let Some(failure) = log_failure {
-        return Err(failure);
+        Command::Dump => dump_default_config(cwd, err),
+        Command::Lint { paths, verbose } => lint_paths(&paths, verbose, cwd, parse, out, err),
     }
-    let config = match config {
+}
+
+/// The lint command's work: load the config (logging it to `out` when `verbose`), lint each file, sum up.
+fn lint_paths(
+    paths: &[String],
+    verbose: bool,
+    cwd: &Path,
+    parse: &Parse,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> io::Result<i32> {
+    let config = match load_config_verbose(cwd, verbose, out)? {
         Ok(config) => config,
         Err(error) => {
             writeln!(err, "gdlint: {error}")?;
@@ -108,19 +109,43 @@ pub fn run(
         }
     };
     let mut problems_total = 0;
-    for file_path in find_gd_files_from_paths(&paths, &config.excluded_directories, cwd) {
+    for file_path in find_gd_files_from_paths(paths, &config.excluded_directories, cwd) {
         match lint_file(&file_path, cwd, &config, parse, err)? {
             Some(count) => problems_total += count,
             None => return Ok(1),
         }
     }
-    if problems_total > 0 {
-        let plural = if problems_total == 1 { "" } else { "s" };
-        writeln!(err, "Failure: {problems_total} problem{plural} found")?;
-        return Ok(1);
+    summary(problems_total, out, err)
+}
+
+/// The config, logging to `out` as `--verbose` does; an error is a failure to write the log.
+fn load_config_verbose(
+    cwd: &Path,
+    verbose: bool,
+    out: &mut dyn Write,
+) -> io::Result<Result<Config, ConfigError>> {
+    let mut log_failure = None;
+    let mut log = |message: String| {
+        if verbose && log_failure.is_none() {
+            log_failure = writeln!(out, "INFO:root:{message}").err();
+        }
+    };
+    let config = load_config_logged(cwd, &mut log);
+    match log_failure {
+        Some(failure) => Err(failure),
+        None => Ok(config),
     }
-    writeln!(out, "Success: no problems found")?;
-    Ok(0)
+}
+
+/// The closing line, and the exit status it goes with.
+fn summary(problems_total: usize, out: &mut dyn Write, err: &mut dyn Write) -> io::Result<i32> {
+    if problems_total == 0 {
+        writeln!(out, "Success: no problems found")?;
+        return Ok(0);
+    }
+    let plural = if problems_total == 1 { "" } else { "s" };
+    writeln!(err, "Failure: {problems_total} problem{plural} found")?;
+    Ok(1)
 }
 
 fn dump_default_config(cwd: &Path, err: &mut dyn Write) -> io::Result<i32> {
