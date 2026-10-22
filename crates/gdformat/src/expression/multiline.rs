@@ -20,7 +20,7 @@ use crate::dot_chain::{
 use crate::expression_to_str::expression_to_str;
 use crate::node::Ex;
 use crate::types::FormattedLines;
-use pycompat::string;
+use pycompat::string::splitlines;
 
 /// A `handlers` dict value: folds one kind of expression to multiple lines.
 type FoldHandler = for<'a> fn(&Ex<'a>, &ExpressionContext, &Context<'a>) -> FormattedLines;
@@ -222,7 +222,7 @@ fn format_string_to_multiple_lines(
     context: &Context,
 ) -> FormattedLines {
     let long_string = string.child(0);
-    let lines = string::splitlines(long_string.value());
+    let lines = splitlines(long_string.value());
     let mut formatted_lines = vec![(
         Some(expression_context.prefix_line),
         format!(
