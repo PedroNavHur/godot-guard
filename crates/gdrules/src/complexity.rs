@@ -244,18 +244,28 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    /// The `visit_<data>` method for a node name, as Python's `getattr(self, f"visit_{node.data}", None)`.
+    fn named_visitor(data: &str) -> Option<fn(&mut Self, &'a Tree)> {
+        Some(match data {
+            "class_def" => Self::visit_class_def,
+            "class_var_stmt" => Self::visit_class_var_stmt,
+            "func_def" => Self::visit_func_def,
+            "property_custom_setter" => Self::visit_property_custom_setter,
+            "property_custom_getter" => Self::visit_property_custom_getter,
+            "lambda" => Self::visit_lambda,
+            "standalone_call" => Self::visit_standalone_call,
+            "getattr_call" => Self::visit_getattr_call,
+            "if_stmt" => Self::visit_if_stmt,
+            "match_stmt" => Self::visit_match_stmt,
+            _ => return None,
+        })
+    }
+
     fn walk_tree(&mut self, node: &'a Tree) {
+        if let Some(visit) = Self::named_visitor(node.data) {
+            return visit(self, node);
+        }
         match node.data {
-            "class_def" => self.visit_class_def(node),
-            "class_var_stmt" => self.visit_class_var_stmt(node),
-            "func_def" => self.visit_func_def(node),
-            "property_custom_setter" => self.visit_property_custom_setter(node),
-            "property_custom_getter" => self.visit_property_custom_getter(node),
-            "lambda" => self.visit_lambda(node),
-            "standalone_call" => self.visit_standalone_call(node),
-            "getattr_call" => self.visit_getattr_call(node),
-            "if_stmt" => self.visit_if_stmt(node),
-            "match_stmt" => self.visit_match_stmt(node),
             data if LOOPS.contains(&data) => self.visit_loop(node),
             data if is_boolean(data) => self.visit_boolean(node),
             data if is_ternary(data) => self.visit_ternary(node),

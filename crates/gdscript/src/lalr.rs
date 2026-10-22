@@ -72,20 +72,12 @@ impl<'s> ParserState<'s> {
         token: LexToken<'s>,
         is_end: bool,
     ) -> Result<Option<Item<'s>>, ParseError> {
-        let grammar = self.grammar;
         loop {
             let state = self.position();
-            let Some(action) = self.language.action(state, token.kind) else {
-                return Err(ParseError {
-                    line: token.span.line,
-                    column: token.span.column,
-                    kind: ErrorKind::UnexpectedToken {
-                        token: grammar.symbols[token.kind as usize],
-                        value: token.value.to_owned(),
-                        expected: grammar.expected(state),
-                    },
-                });
-            };
+            let action = self
+                .language
+                .action(state, token.kind)
+                .ok_or_else(|| self.unexpected(state, &token))?;
             match action {
                 Action::Shift(next) => {
                     assert!(!is_end, "lark never shifts $END");
@@ -94,21 +86,38 @@ impl<'s> ParserState<'s> {
                     return Ok(None);
                 }
                 Action::Reduce(index) => {
-                    let rule = &grammar.rules[index as usize];
-                    reduce(grammar, rule, &mut self.value_stack);
-                    self.state_stack
-                        .truncate(self.state_stack.len() - rule.size);
-                    let Some(Action::Shift(next)) =
-                        self.language.action(self.position(), rule.origin)
-                    else {
-                        panic!("no goto for {} from state {}", rule.data, self.position());
-                    };
-                    self.state_stack.push(next);
-                    if is_end && next == grammar.end_state {
+                    let next = self.reduce_and_goto(index);
+                    if is_end && next == self.grammar.end_state {
                         return Ok(self.value_stack.pop());
                     }
                 }
             }
         }
+    }
+
+    /// The error for `token` with no action in `state`.
+    fn unexpected(&self, state: u16, token: &LexToken<'s>) -> ParseError {
+        ParseError {
+            line: token.span.line,
+            column: token.span.column,
+            kind: ErrorKind::UnexpectedToken {
+                token: self.grammar.symbols[token.kind as usize],
+                value: token.value.to_owned(),
+                expected: self.grammar.expected(state),
+            },
+        }
+    }
+
+    /// Reduce by rule `index`, then push and return the state the rule's origin goes to.
+    fn reduce_and_goto(&mut self, index: u16) -> u16 {
+        let rule = &self.grammar.rules[index as usize];
+        reduce(self.grammar, rule, &mut self.value_stack);
+        self.state_stack
+            .truncate(self.state_stack.len() - rule.size);
+        let Some(Action::Shift(next)) = self.language.action(self.position(), rule.origin) else {
+            panic!("no goto for {} from state {}", rule.data, self.position());
+        };
+        self.state_stack.push(next);
+        next
     }
 }

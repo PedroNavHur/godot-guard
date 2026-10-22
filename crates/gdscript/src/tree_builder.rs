@@ -95,15 +95,12 @@ fn child_filter<'s>(
         return children.map(|c| c.into_node(grammar)).collect();
     };
     let mut filtered = Vec::new();
-    let mut wanted = include.iter().peekable();
-    for (index, child) in children.enumerate() {
-        let Some(&&(at, expand)) = wanted.peek() else {
-            break;
-        };
-        if at as usize != index {
-            continue;
-        }
-        wanted.next();
+    let mut children = children.enumerate();
+    for &(at, expand) in include {
+        // `include` ascends, so the search never goes back; lark's `children[i]` raises past the end.
+        let (_, child) = children
+            .find(|(index, _)| *index == at as usize)
+            .expect("include indexes a reduced child");
         match (expand, child.into_node(grammar)) {
             // Optimize for left-recursion, as lark does: `_x_star: _x_star item` reuses the list.
             (true, Node::Tree(inlined)) if filtered.is_empty() => filtered = inlined.children,
