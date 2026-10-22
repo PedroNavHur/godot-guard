@@ -69,26 +69,14 @@ fn set_end(chars: &[char], i: usize) -> Option<usize> {
 
 /// The set's body as fnmatch rewrites it for `re`: backslashes doubled, and, when it holds `--`, hyphens
 /// escaped except those that form ranges; then `&`, `~`, and `|` escaped, and `!` turned into `^`.
-fn set_stuff(chars: &[char], mut i: usize, j: usize) -> String {
+fn set_stuff(chars: &[char], i: usize, j: usize) -> String {
     let raw: String = chars[i..j].iter().collect();
-    let mut stuff = if !raw.contains("--") {
+    let stuff = if !raw.contains("--") {
         raw.replace('\\', r"\\")
     } else {
-        let mut chunks = Vec::new();
-        let mut k = if chars[i] == '!' { i + 2 } else { i + 1 };
-        while let Some(found) = (k..j).find(|&index| chars[index] == '-') {
-            chunks.push(chars[i..found].iter().collect::<String>());
-            i = found + 1;
-            k = found + 3;
-        }
-        chunks.push(chars[i..j].iter().collect());
-        let escaped: Vec<String> = chunks
-            .iter()
-            .map(|s| s.replace('\\', r"\\").replace('-', r"\-"))
-            .collect();
-        escaped.join("-")
+        escape_hyphen_chunks(chars, i, j)
     };
-    stuff = stuff
+    let stuff = stuff
         .replace('&', r"\&")
         .replace('~', r"\~")
         .replace('|', r"\|");
@@ -101,6 +89,24 @@ fn set_stuff(chars: &[char], mut i: usize, j: usize) -> String {
     }
 }
 
+/// The body `chars[i..j]` split at the hyphens that form ranges, each chunk's backslashes and hyphens
+/// escaped, rejoined with `-`.
+fn escape_hyphen_chunks(chars: &[char], mut i: usize, j: usize) -> String {
+    let mut chunks = Vec::new();
+    let mut k = if chars[i] == '!' { i + 2 } else { i + 1 };
+    while let Some(found) = (k..j).find(|&index| chars[index] == '-') {
+        chunks.push(chars[i..found].iter().collect::<String>());
+        i = found + 1;
+        k = found + 3;
+    }
+    chunks.push(chars[i..j].iter().collect());
+    let escaped: Vec<String> = chunks
+        .iter()
+        .map(|s| s.replace('\\', r"\\").replace('-', r"\-"))
+        .collect();
+    escaped.join("-")
+}
+
 /// The Rust class for a set body in `re` syntax, read as `sre_parse` reads it.
 fn set_regex(stuff: &str) -> Result<String, String> {
     let chars: Vec<char> = stuff.chars().collect();
@@ -108,19 +114,25 @@ fn set_regex(stuff: &str) -> Result<String, String> {
     let mut i = usize::from(negated);
     let mut class = String::from(if negated { "[^" } else { "[" });
     while i < chars.len() {
-        let (low, next) = set_item(&chars, i);
+        let ((low, high), next) = set_range(&chars, i)?;
         i = next;
-        let mut high = low;
-        if chars.get(i) == Some(&'-') && i + 1 < chars.len() {
-            (high, i) = set_item(&chars, i + 1);
-            if high < low {
-                return Err(format!("bad character range {low}-{high}"));
-            }
-        }
         class.push_str(&format!("\\x{{{:x}}}-\\x{{{:x}}}", low as u32, high as u32));
     }
     class.push(']');
     Ok(class)
+}
+
+/// One member of a set, a single character or a range, and the index past it.
+fn set_range(chars: &[char], i: usize) -> Result<((char, char), usize), String> {
+    let (low, next) = set_item(chars, i);
+    if chars.get(next) != Some(&'-') || next + 1 >= chars.len() {
+        return Ok(((low, low), next));
+    }
+    let (high, next) = set_item(chars, next + 1);
+    if high < low {
+        return Err(format!("bad character range {low}-{high}"));
+    }
+    Ok(((low, high), next))
 }
 
 /// One character of a set, after its escaping backslash if any, and the index past it.

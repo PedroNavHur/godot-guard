@@ -82,17 +82,18 @@ fn join(parts: impl Iterator<Item = String>) -> String {
     parts.collect::<Vec<_>>().join(", ")
 }
 
+fn non_finite_repr(number: f64) -> &'static str {
+    match number {
+        n if n.is_nan() => "nan",
+        n if n > 0.0 => "inf",
+        _ => "-inf",
+    }
+}
+
 /// `repr(float)`: the shortest round-trip digits, in exponent form below 1e-4 and from 1e16.
 fn float_repr(number: f64) -> String {
-    if number.is_nan() {
-        return "nan".into();
-    }
-    if number.is_infinite() {
-        return if number > 0.0 {
-            "inf".into()
-        } else {
-            "-inf".into()
-        };
+    if !number.is_finite() {
+        return non_finite_repr(number).into();
     }
     let magnitude = number.abs();
     if magnitude != 0.0 && !(1e-4..1e16).contains(&magnitude) {
@@ -222,41 +223,49 @@ fn compose(events: &mut Events, (event, mark): (Event, Marker)) -> Result<Node, 
             let tag = resolve(&text, style, tag);
             Ok(Node::Scalar { text, tag, mark })
         }
-        Event::SequenceStart(_, tag) => {
-            let mut items = Vec::new();
-            loop {
-                let next = events.next()?;
-                if matches!(next.0, Event::SequenceEnd) {
-                    break;
-                }
-                items.push(compose(events, next)?);
-            }
-            Ok(Node::Seq {
-                items,
-                tag: collection_tag(tag, "seq"),
-                mark,
-            })
-        }
-        Event::MappingStart(_, tag) => {
-            let mut entries = Vec::new();
-            loop {
-                let next = events.next()?;
-                if matches!(next.0, Event::MappingEnd) {
-                    break;
-                }
-                let key = compose(events, next)?;
-                let next = events.next()?;
-                let value = compose(events, next)?;
-                entries.push((key, value));
-            }
-            Ok(Node::Map {
-                entries,
-                tag: collection_tag(tag, "map"),
-                mark,
-            })
-        }
+        Event::SequenceStart(_, tag) => compose_sequence(events, tag, mark),
+        Event::MappingStart(_, tag) => compose_mapping(events, tag, mark),
         other => Err(error(mark, format!("unexpected {other:?}"))),
     }
+}
+
+fn compose_sequence(
+    events: &mut Events,
+    tag: Option<Tag>,
+    mark: Marker,
+) -> Result<Node, YamlError> {
+    let mut items = Vec::new();
+    loop {
+        let next = events.next()?;
+        if matches!(next.0, Event::SequenceEnd) {
+            break;
+        }
+        items.push(compose(events, next)?);
+    }
+    Ok(Node::Seq {
+        items,
+        tag: collection_tag(tag, "seq"),
+        mark,
+    })
+}
+
+fn compose_mapping(events: &mut Events, tag: Option<Tag>, mark: Marker) -> Result<Node, YamlError> {
+    let mut entries = Vec::new();
+    loop {
+        let next = events.next()?;
+        if matches!(next.0, Event::MappingEnd) {
+            break;
+        }
+        let key = compose(events, next)?;
+        let next = events.next()?;
+        let value = compose(events, next)?;
+        entries.push((key, value));
+    }
+    Ok(Node::Map {
+        entries,
+        tag: collection_tag(tag, "map"),
+        mark,
+    })
 }
 
 fn full_tag(tag: &Tag) -> String {
@@ -334,16 +343,23 @@ fn validate(root: &Node) -> Result<(), YamlError> {
                     visit(item, &mut deferred)?;
                 }
             }
-            Node::Map { entries, .. } => {
-                check_keys(entries)?;
-                for (key, value) in entries {
-                    if !matches!(key, Node::Scalar { .. }) {
-                        return Err(error(mark_of(key), "found unhashable key"));
-                    }
-                    visit(value, &mut deferred)?;
-                }
-            }
+            Node::Map { entries, .. } => validate_entries(entries, &mut deferred)?,
         }
+    }
+    Ok(())
+}
+
+/// A mapping's checks: merge and duplicate keys, then each key's hashability and its value.
+fn validate_entries<'a>(
+    entries: &'a [(Node, Node)],
+    deferred: &mut VecDeque<&'a Node>,
+) -> Result<(), YamlError> {
+    check_keys(entries)?;
+    for (key, value) in entries {
+        if !matches!(key, Node::Scalar { .. }) {
+            return Err(error(mark_of(key), "found unhashable key"));
+        }
+        visit(value, deferred)?;
     }
     Ok(())
 }

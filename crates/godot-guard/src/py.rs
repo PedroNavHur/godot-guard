@@ -84,23 +84,28 @@ pub fn repr(text: &str) -> String {
     let mut quoted = String::with_capacity(text.len() + 2);
     quoted.push(quote);
     for c in text.chars() {
-        match c {
-            '\\' => quoted.push_str("\\\\"),
-            '\t' => quoted.push_str("\\t"),
-            '\n' => quoted.push_str("\\n"),
-            '\r' => quoted.push_str("\\r"),
-            _ if c == quote => {
-                quoted.push('\\');
-                quoted.push(c);
-            }
-            _ if is_printable(c) => quoted.push(c),
-            _ if (c as u32) < 0x100 => quoted.push_str(&format!("\\x{:02x}", c as u32)),
-            _ if (c as u32) < 0x10000 => quoted.push_str(&format!("\\u{:04x}", c as u32)),
-            _ => quoted.push_str(&format!("\\U{:08x}", c as u32)),
-        }
+        push_escaped(&mut quoted, c, quote);
     }
     quoted.push(quote);
     quoted
+}
+
+/// `unicode_repr`'s treatment of one character inside `quote`s.
+fn push_escaped(quoted: &mut String, c: char, quote: char) {
+    match c {
+        '\\' => quoted.push_str("\\\\"),
+        '\t' => quoted.push_str("\\t"),
+        '\n' => quoted.push_str("\\n"),
+        '\r' => quoted.push_str("\\r"),
+        _ if c == quote => {
+            quoted.push('\\');
+            quoted.push(c);
+        }
+        _ if is_printable(c) => quoted.push(c),
+        _ if (c as u32) < 0x100 => quoted.push_str(&format!("\\x{:02x}", c as u32)),
+        _ if (c as u32) < 0x10000 => quoted.push_str(&format!("\\u{:04x}", c as u32)),
+        _ => quoted.push_str(&format!("\\U{:08x}", c as u32)),
+    }
 }
 
 /// `str.isprintable()` for one character.
