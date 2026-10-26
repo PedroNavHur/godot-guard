@@ -1,0 +1,31 @@
+# godot-guard configuration. Every key is optional; these are the defaults.
+paths: [.]
+exclude: [addons/**, .godot/**]
+limits:
+  cognitive: 8
+  cyclomatic: 16
+  comment-lines: 2
+  inputs: 8
+rules:
+  cognitive-complexity: error
+  cyclomatic-complexity: error
+  long-comment: error
+  interface-cap: error
+  nested-ternary: warn
+  analyzer-config: error
+  lookup-in-hot-path: error
+  load-in-hot-path: error
+  private-export: error
+  self-assign: error
+  per-frame-allocation: warn
+relaxed-warnings: []
+boundaries: []
+gate:
+  format: true
+  lint: true
+  steps: []
+  test-commands: []  # shell commands run with the tests, after the import
+  import: true
+  analyzer: true
+  tests: {tests}
+  smoke: [--quit-after, "3"]

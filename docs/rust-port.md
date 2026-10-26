@@ -60,6 +60,10 @@ Allowed deviations:
   0.4.0 scaffolds the pip requirement. The port's `quality.yml` is
   `crates/godot-guard/templates/quality.yml`; the Python package's templates
   still serve 0.4.0.
+- Additions since 0.5.0 have no 0.4.0 counterpart: `complexity --json`
+  (0.6.0) and `gate.test-commands` (0.7.0; 0.4.0 rejects the key). The
+  config `init` writes is `crates/godot-guard/templates/godot-guard.yml`, so it
+  can list such keys.
 
 Config files (`.gdlintrc`, `gdformatrc`) are read by one PyYAML 1.1 port in
 `pycompat::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's

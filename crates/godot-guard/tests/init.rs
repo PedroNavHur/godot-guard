@@ -51,6 +51,8 @@ fn scaffolds_everything_once() {
             shards: None
         }]
     );
+    assert!(repo.config().gate.test_commands.is_empty());
+    assert!(read(root, ".godot-guard.yml").contains("\n  test-commands: []  # "));
     let hook = root.join(".githooks/pre-commit");
     assert_ne!(fs::metadata(&hook).unwrap().permissions().mode() & 0o111, 0);
     assert!(read(root, ".githooks/pre-commit").contains("gate --fast --staged"));

@@ -1,7 +1,8 @@
 //! `godot-guard init`: scaffold the config, hooks, and CI workflow.
 //!
-//! The templates are embedded at build time: the Python package's own files, except `quality.yml`, which
-//! installs the release binary where the Python package's installs the package with pip.
+//! The templates are embedded at build time: the Python package's own hooks, and the crate's own
+//! `godot-guard.yml`, which lists the keys added since 0.4.0, and `quality.yml`, which installs the release
+//! binary where the Python package's installs the package with pip.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -17,7 +18,7 @@ use crate::error::{Failure, Result};
 pub const TEMPLATES: [(&str, &str); 4] = [
     (
         "godot-guard.yml",
-        include_str!("../../../src/godot_guard/templates/godot-guard.yml"),
+        include_str!("../templates/godot-guard.yml"),
     ),
     (
         "pre-commit",
