@@ -25,8 +25,8 @@ pub enum Phase {
 
 pub const PHASES: [Phase; 3] = [Phase::Prepare, Phase::Import, Phase::Test];
 
-/// A step's work: given an echo (None writes to the terminal) and None or a Godot process's environment,
-/// its status.
+/// A step's work: given an echo (None writes to the terminal) and None or a TEST step's environment
+/// (Godot or test command), its status.
 pub type Action<'a> = Box<dyn Fn(Option<Echo>, &Env) -> Result<i32> + Sync + 'a>;
 
 /// Where the gate's own lines go: stdout, or a test's buffer. A failed write stops the gate.

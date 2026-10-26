@@ -24,8 +24,8 @@ gate:
   format: true
   lint: true
   steps: []
-  test-commands: []  # shell commands run with the tests, after the import
   import: true
   analyzer: true
   tests: {tests}
+  test-commands: []  # shell commands run with the tests, after the import
   smoke: [--quit-after, "3"]
