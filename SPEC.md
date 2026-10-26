@@ -76,6 +76,7 @@ gate:
   import: true            # godot --headless --editor --quit
   analyzer: true          # load every scanned script headless
   tests: []               # res:// scripts, or {script, shards}: run with --script, in order
+  test-commands: []       # shell commands, run from the repo root, after tests (0.7.0)
   smoke: [--quit-after, "3"]   # args for a main-scene run; [] or false skips it
   jobs: 1                 # gate workers: a whole number of at least 1, or auto
 ```
@@ -205,8 +206,8 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     Nothing selected means nothing to do, exit 0.
   - full (default, pre-push and CI): the whole configured gate in this order,
     stopping at the first failure: format, lint, check, steps, import,
-    analyzer, tests, smoke. Godot steps go through `run`. Print a header per
-    step and the elapsed seconds per step.
+    analyzer, tests, test-commands, smoke. Godot steps go through `run`. Print
+    a header per step and the elapsed seconds per step.
   - Jobs: `gate.jobs` sets the worker count, and `--jobs` overrides it for
     the run. A whole number is used as is; `auto` is the usable CPUs (the
     affinity mask's size where `os.sched_getaffinity` exists, else
@@ -217,19 +218,19 @@ Run from anywhere inside the repo; the root is the nearest directory holding
   - With 1 job the order and output above hold exactly, streamed. With more,
     each phase runs on a pool of at most that many workers, and the phases run
     in order: (1) format, lint, check, and `steps`; (2) import, alone; (3)
-    analyzer, every test process, and smoke. Within a phase the config order
-    is the schedule. Check runs in a thread.
+    analyzer, every test process, `test-commands`, and smoke. Within a phase
+    the config order is the schedule. Check runs in a thread.
   - A step in a parallel phase has its output captured and printed as one
     block when it finishes: `== NAME`, the output, then `== NAME passed in Xs`
     or `== NAME failed after Xs`. On the first failure in a phase no new step
     starts, running steps finish and print, every failed step is named in a
     `== failed: NAME, ...` line, and the gate exits 1 without running later
     phases.
-  - Each Godot process in a parallel phase gets a fresh user-data directory,
-    removed when it finishes. `XDG_DATA_HOME` names it on every platform; on
-    macOS `HOME` names it too, because Godot's user directory there follows
-    `HOME` (`CFFIXED_USER_HOME` and `XDG_DATA_HOME` do not move it). Serial
-    runs keep the inherited environment.
+  - Each step in phase (3), a Godot process or a test command, gets a fresh
+    user-data directory, removed when it finishes. `XDG_DATA_HOME` names it on
+    every platform; on macOS `HOME` names it too, because Godot's user
+    directory there follows `HOME` (`CFFIXED_USER_HOME` and `XDG_DATA_HOME` do
+    not move it). Serial runs keep the inherited environment.
   - SIGINT and SIGTERM stop the gate: every child process session is killed,
     no new child starts, and the gate exits with 128 plus the signal number.
   - Sharded test entries: `{script: res://..., shards: N}` (N a whole number
