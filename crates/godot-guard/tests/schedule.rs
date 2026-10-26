@@ -356,7 +356,11 @@ fn sigterm_reaches_a_nested_guards_godot_before_the_kill() {
     let shim = Shim::new();
     let guard = env!("CARGO_BIN_EXE_godot-guard");
     let root = shim.repo.root.display();
-    shim.godot(0, &format!("echo $$ > \"{root}/godot.pid\"; exec sleep 30"));
+    // This Godot ignores SIGTERM, so only the nested guard's SIGKILL ends it.
+    shim.godot(
+        0,
+        &format!("trap '' TERM; echo $$ > \"{root}/godot.pid\"; sleep 30 & wait"),
+    );
     shim.repo.write(
         ".godot-guard.yml",
         &format!(
@@ -376,6 +380,19 @@ fn sigterm_reaches_a_nested_guards_godot_before_the_kill() {
     unsafe { libc::kill(gate.id() as i32, libc::SIGTERM) };
     assert_eq!(gate.wait().unwrap().code(), Some(128 + libc::SIGTERM));
     assert_group_gone(pid);
+    assert_process_gone(pid);
+}
+
+/// Check the process `pid` is gone, killing it if not.
+fn assert_process_gone(pid: i32) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    // SAFETY: plain syscalls on a pid this test recorded; signal 0 only checks that it exists.
+    while unsafe { libc::kill(pid, 0) } == 0 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    let alive = unsafe { libc::kill(pid, 0) } == 0;
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert!(!alive, "the nested guard's Godot outlived the gate");
 }
 
 #[test]

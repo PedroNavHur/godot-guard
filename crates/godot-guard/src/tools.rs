@@ -150,6 +150,7 @@ fn start(command: &mut Command) -> Result<Child> {
             }
         });
     }
+    command.env(NESTED_ENV, "1");
     let program = command.get_program().to_string_lossy().into_owned();
     let child = command
         .spawn()
@@ -187,8 +188,14 @@ fn await_stop() -> ! {
 const STOP_GRACE: Duration = Duration::from_secs(2);
 const STOP_POLL: Duration = Duration::from_millis(20);
 
-/// Refuse new children, SIGTERM the live ones, and SIGKILL those still alive after `STOP_GRACE`, for a stop.
-/// A nested godot-guard gets to kill its own Godot session before it exits.
+/// Extra time past `STOP_GRACE` for a nested godot-guard to SIGKILL its Godot and exit before the outer kill.
+const STOP_MARGIN: Duration = Duration::from_secs(1);
+
+/// Set on every child, so a godot-guard a child runs knows it is nested and keeps to `STOP_GRACE` alone.
+const NESTED_ENV: &str = "GODOT_GUARD_NESTED";
+
+/// Refuse new children, SIGTERM the live ones, and SIGKILL the groups still alive after `stop_wait`, for a
+/// stop. A nested godot-guard gets to kill its own Godot session before it exits.
 pub fn stop_children() {
     let sessions: Vec<i32> = {
         let mut registry = registry();
@@ -199,7 +206,7 @@ pub fn stop_children() {
         // The stop exits next; a child it cannot signal is left to the kill below.
         let _ = signal_session(pid, libc::SIGTERM);
     }
-    wait_for_children();
+    wait_for_groups(&sessions);
     let live = registry().live.clone();
     for &pid in &sessions {
         if live.contains(&pid) {
@@ -212,13 +219,28 @@ pub fn stop_children() {
     }
 }
 
-/// Wait until every registered child is finished, or `STOP_GRACE` passes. The lock is free between polls,
+/// How long a stop waits before its SIGKILL: a nested godot-guard ends first, so its parent's kill finds it gone.
+fn stop_wait() -> Duration {
+    if std::env::var_os(NESTED_ENV).is_some() {
+        STOP_GRACE
+    } else {
+        STOP_GRACE + STOP_MARGIN
+    }
+}
+
+/// Wait until every group in `sessions` is empty, or `stop_wait` passes. The lock is free between polls,
 /// so the threads waiting on the children can deregister them.
-fn wait_for_children() {
-    let deadline = Instant::now() + STOP_GRACE;
-    while Instant::now() < deadline && !registry().live.is_empty() {
+fn wait_for_groups(sessions: &[i32]) {
+    let deadline = Instant::now() + stop_wait();
+    while Instant::now() < deadline && !sessions.iter().all(|&pid| group_gone(pid)) {
         thread::sleep(STOP_POLL);
     }
+}
+
+/// Whether the group `pid` led has no member left. EPERM counts: macOS answers it for a zombie-only group.
+fn group_gone(pid: i32) -> bool {
+    // SAFETY: a plain syscall; signal 0 only checks that the group exists.
+    unsafe { libc::killpg(pid, 0) != 0 }
 }
 
 /// SIGKILL the session `pid` leads. A gone group is no error.

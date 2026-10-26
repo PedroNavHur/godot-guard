@@ -65,7 +65,10 @@ Allowed deviations:
   config `init` writes is `crates/godot-guard/templates/godot-guard.yml`, so it
   can list such keys.
 - A stop (SIGINT or SIGTERM) sends SIGTERM to each child's session and
-  SIGKILLs the survivors after a 2-second grace period; 0.4.0 kills at once.
+  waits for each signalled process group to empty, up to a 2-second grace
+  period plus a 1-second margin (the grace alone for a guard that a guard
+  started, marked by `GODOT_GUARD_NESTED`), then SIGKILLs the rest; 0.4.0
+  kills at once.
   A `test-commands` entry that runs `godot-guard run` then lets the nested
   guard kill its own Godot session instead of orphaning it. Meanwhile a run
   whose child ended, or that would start one, waits for the stop's exit.

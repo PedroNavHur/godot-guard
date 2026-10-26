@@ -232,8 +232,12 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     directory there follows `HOME` (`CFFIXED_USER_HOME` and `XDG_DATA_HOME` do
     not move it). Serial runs keep the inherited environment.
   - SIGINT and SIGTERM stop the gate: every child process session is sent
-    SIGTERM first, then SIGKILLed if still alive after a 2-second grace period,
-    no new child starts, and the gate exits with 128 plus the signal number.
+    SIGTERM first. The stop waits for each signalled process group to empty,
+    up to a 2-second grace period plus a 1-second margin, so a nested
+    `godot-guard run` (which sees `GODOT_GUARD_NESTED`, set on every child,
+    and waits the grace alone) finishes its own stop first; it then SIGKILLs
+    the rest.
+    No new child starts, and the gate exits with 128 plus the signal number.
   - Sharded test entries: `{script: res://..., shards: N}` (N a whole number
     of at least 1) runs N processes, the I-th with `-- --shard=I/N` after its
     `--script` arguments, for I from 1 to N. Each is a step named `tests
