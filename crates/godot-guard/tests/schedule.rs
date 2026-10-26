@@ -383,6 +383,44 @@ fn sigterm_reaches_a_nested_guards_godot_before_the_kill() {
     assert_process_gone(pid);
 }
 
+#[test]
+fn sigterm_reaches_godot_through_two_nested_gates() {
+    let shim = Shim::new();
+    let guard = env!("CARGO_BIN_EXE_godot-guard");
+    let root = shim.repo.root.display();
+    shim.godot(
+        0,
+        &format!("trap '' TERM; echo $$ > \"{root}/godot.pid\"; sleep 30 & wait"),
+    );
+    let gate_config = |command: String| {
+        format!(
+            "paths: [.]\ngate:\n  format: false\n  lint: false\n  import: false\n  analyzer: false\n  smoke: false\n  test-commands: ['{command}']\n"
+        )
+    };
+    let inner = Repo::new(
+        &[],
+        Some(&gate_config(format!("\"{guard}\" run -- --headless"))),
+    );
+    let inner_root = inner.root.display();
+    shim.repo.write(
+        ".godot-guard.yml",
+        &gate_config(format!("cd \"{inner_root}\" && \"{guard}\" gate --jobs 1")),
+    );
+    let mut gate = Command::new(guard)
+        .args(["gate", "--jobs", "1"])
+        .current_dir(&shim.repo.root)
+        .env("GODOT", shim.repo.path(".bin/godot"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = wait_for_pid(&shim.repo.root.join("godot.pid"));
+    // SAFETY: a plain signal syscall on the process this test started.
+    unsafe { libc::kill(gate.id() as i32, libc::SIGTERM) };
+    assert_eq!(gate.wait().unwrap().code(), Some(128 + libc::SIGTERM));
+    assert_process_gone(pid);
+}
+
 /// Check the process `pid` is gone, killing it if not.
 fn assert_process_gone(pid: i32) {
     let deadline = Instant::now() + Duration::from_secs(5);

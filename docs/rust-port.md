@@ -66,9 +66,9 @@ Allowed deviations:
   can list such keys.
 - A stop (SIGINT or SIGTERM) sends SIGTERM to each child's session and
   waits for each signalled process group to empty, up to a 2-second grace
-  period plus a 1-second margin (the grace alone for a guard that a guard
-  started, marked by `GODOT_GUARD_NESTED`), then SIGKILLs the rest; 0.4.0
-  kills at once.
+  period plus a margin of one second per nesting level left (5 seconds at the
+  top, one second less per level, a 2-second floor; `GODOT_GUARD_DEPTH` counts
+  the levels), then SIGKILLs the rest; 0.4.0 kills at once.
   A `test-commands` entry that runs `godot-guard run` then lets the nested
   guard kill its own Godot session instead of orphaning it. Meanwhile a run
   whose child ended, or that would start one, waits for the stop's exit.

@@ -150,7 +150,7 @@ fn start(command: &mut Command) -> Result<Child> {
             }
         });
     }
-    command.env(NESTED_ENV, "1");
+    command.env(DEPTH_ENV, depth().saturating_add(1).to_string());
     let program = command.get_program().to_string_lossy().into_owned();
     let child = command
         .spawn()
@@ -188,11 +188,14 @@ fn await_stop() -> ! {
 const STOP_GRACE: Duration = Duration::from_secs(2);
 const STOP_POLL: Duration = Duration::from_millis(20);
 
-/// Extra time past `STOP_GRACE` for a nested godot-guard to SIGKILL its Godot and exit before the outer kill.
+/// Extra time past `STOP_GRACE` per guard level below this one, so each guard kills after its nested guards.
 const STOP_MARGIN: Duration = Duration::from_secs(1);
 
-/// Set on every child, so a godot-guard a child runs knows it is nested and keeps to `STOP_GRACE` alone.
-const NESTED_ENV: &str = "GODOT_GUARD_NESTED";
+/// Levels of nested godot-guards that get their own wait; nesting deeper than this shares the floor wait.
+const MAX_NESTED_STOPS: u32 = 3;
+
+/// Set on every child to its nesting depth: this process's depth plus one, 0 at the top level.
+const DEPTH_ENV: &str = "GODOT_GUARD_DEPTH";
 
 /// Refuse new children, SIGTERM the live ones, and SIGKILL the groups still alive after `stop_wait`, for a
 /// stop. A nested godot-guard gets to kill its own Godot session before it exits.
@@ -219,13 +222,17 @@ pub fn stop_children() {
     }
 }
 
+/// This process's nesting depth: the parsed `DEPTH_ENV`, or 0 when it is unset or unparsable.
+fn depth() -> u32 {
+    std::env::var(DEPTH_ENV)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
+}
+
 /// How long a stop waits before its SIGKILL: a nested godot-guard ends first, so its parent's kill finds it gone.
 fn stop_wait() -> Duration {
-    if std::env::var_os(NESTED_ENV).is_some() {
-        STOP_GRACE
-    } else {
-        STOP_GRACE + STOP_MARGIN
-    }
+    STOP_GRACE + STOP_MARGIN * (MAX_NESTED_STOPS - depth().min(MAX_NESTED_STOPS))
 }
 
 /// Wait until every group in `sessions` is empty, or `stop_wait` passes. The lock is free between polls,

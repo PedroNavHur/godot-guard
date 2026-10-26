@@ -233,10 +233,10 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     not move it). Serial runs keep the inherited environment.
   - SIGINT and SIGTERM stop the gate: every child process session is sent
     SIGTERM first. The stop waits for each signalled process group to empty,
-    up to a 2-second grace period plus a 1-second margin, so a nested
-    `godot-guard run` (which sees `GODOT_GUARD_NESTED`, set on every child,
-    and waits the grace alone) finishes its own stop first; it then SIGKILLs
-    the rest.
+    up to a 2-second grace period plus a margin of one second per level of
+    nesting left below it (5 seconds at the top, 4, 3, then a 2-second floor),
+    so a nested guard (`GODOT_GUARD_DEPTH` counts the levels, set on every
+    child) finishes its own stop first; it then SIGKILLs the rest.
     No new child starts, and the gate exits with 128 plus the signal number.
   - Sharded test entries: `{script: res://..., shards: N}` (N a whole number
     of at least 1) runs N processes, the I-th with `-- --shard=I/N` after its
