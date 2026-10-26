@@ -211,8 +211,8 @@ fn a_missing_tool_fails_its_step_with_127_and_the_reason() {
     );
 }
 
-fn godot_step(name: &str, phase: Phase) -> Step<'_> {
-    Step::godot(name, phase, Box::new(|_, _| Ok(0)))
+fn idle_step(name: &str, phase: Phase) -> Step<'_> {
+    Step::new(name, phase, Box::new(|_, _| Ok(0)))
 }
 
 fn value(env: &[(OsString, OsString)], key: &str) -> Option<OsString> {
@@ -223,8 +223,8 @@ fn value(env: &[(OsString, OsString)], key: &str) -> Option<OsString> {
 }
 
 #[test]
-fn godot_steps_get_a_fresh_data_dir_that_is_removed_afterwards() {
-    let step = godot_step("tests", Phase::Test);
+fn test_steps_get_a_fresh_data_dir_that_is_removed_afterwards() {
+    let step = idle_step("tests", Phase::Test);
     let isolated = Isolation::new(&step).unwrap();
     let env = isolated.env().clone().expect("an environment");
     let data = std::path::PathBuf::from(value(&env, "XDG_DATA_HOME").unwrap());
@@ -261,7 +261,7 @@ fn other_steps_and_import_get_no_environment() {
             .is_none()
     );
     assert!(
-        Isolation::new(&godot_step("import", Phase::Import))
+        Isolation::new(&idle_step("import", Phase::Import))
             .unwrap()
             .env()
             .is_none()
@@ -269,7 +269,7 @@ fn other_steps_and_import_get_no_environment() {
 }
 
 #[test]
-fn godot_steps_in_a_phase_get_their_own_dirs() {
+fn test_steps_in_a_phase_get_their_own_dirs() {
     let seen = Mutex::new(Vec::new());
     let record = |env: &Option<Vec<(OsString, OsString)>>| {
         seen.lock()
@@ -278,8 +278,8 @@ fn godot_steps_in_a_phase_get_their_own_dirs() {
         Ok(0)
     };
     let steps = [
-        Step::godot("one", Phase::Test, Box::new(move |_, env| record(env))),
-        Step::godot("two", Phase::Test, Box::new(move |_, env| record(env))),
+        Step::new("one", Phase::Test, Box::new(move |_, env| record(env))),
+        Step::new("two", Phase::Test, Box::new(move |_, env| record(env))),
     ];
     assert_eq!(captured(&steps, 2).0, 0);
     let seen = seen.lock().unwrap().clone();

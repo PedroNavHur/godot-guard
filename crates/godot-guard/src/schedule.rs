@@ -36,7 +36,6 @@ pub struct Step<'a> {
     pub name: String,
     pub phase: Phase,
     pub action: Action<'a>,
-    pub godot: bool,
 }
 
 impl<'a> Step<'a> {
@@ -45,16 +44,6 @@ impl<'a> Step<'a> {
             name: name.into(),
             phase,
             action,
-            godot: false,
-        }
-    }
-
-    pub fn godot(name: impl Into<String>, phase: Phase, action: Action<'a>) -> Step<'a> {
-        Step {
-            name: name.into(),
-            phase,
-            action,
-            godot: true,
         }
     }
 }
@@ -242,9 +231,11 @@ fn run_step(step: &Step, mut echo: Option<Echo>, env: &Env, out: &Out) -> Result
     }
 }
 
-/// For a Godot test step, an environment with a fresh user-data dir, removed on drop. Other steps get none.
+/// For a TEST step, an environment with a fresh user-data dir, removed on drop.
+/// Other steps get none.
 ///
-/// Only TEST steps run beside each other; IMPORT runs alone and keeps the inherited environment.
+/// TEST steps run beside each other on the imported project; IMPORT runs alone and keeps the inherited
+/// environment, and PREPARE runs no Godot.
 pub struct Isolation {
     _temp: Option<Scratch>,
     env: Env,
@@ -252,7 +243,7 @@ pub struct Isolation {
 
 impl Isolation {
     pub fn new(step: &Step) -> Result<Isolation> {
-        if !(step.godot && step.phase == Phase::Test) {
+        if step.phase != Phase::Test {
             return Ok(Isolation {
                 _temp: None,
                 env: None,
