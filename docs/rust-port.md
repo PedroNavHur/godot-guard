@@ -64,6 +64,11 @@ Allowed deviations:
   (0.6.0) and `gate.test-commands` (0.7.0; 0.4.0 rejects the key). The
   config `init` writes is `crates/godot-guard/templates/godot-guard.yml`, so it
   can list such keys.
+- A stop (SIGINT or SIGTERM) sends SIGTERM to each child's session and
+  SIGKILLs the survivors after a 2-second grace period; 0.4.0 kills at once.
+  A `test-commands` entry that runs `godot-guard run` then lets the nested
+  guard kill its own Godot session instead of orphaning it. Meanwhile a run
+  whose child ended, or that would start one, waits for the stop's exit.
 
 Config files (`.gdlintrc`, `gdformatrc`) are read by one PyYAML 1.1 port in
 `pycompat::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's

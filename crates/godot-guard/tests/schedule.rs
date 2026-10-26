@@ -317,21 +317,30 @@ fn stop_gate_mid_step(signum: i32, jobs: &str) {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let pidfile = repo.root.join("pid");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let pid: i32 = loop {
-        if let Ok(text) = fs::read_to_string(&pidfile)
-            && let Ok(pid) = text.trim().parse()
-        {
-            break pid;
-        }
-        assert!(Instant::now() < deadline, "the gate never started its step");
-        thread::sleep(Duration::from_millis(20));
-    };
+    let pid = wait_for_pid(&repo.root.join("pid"));
     // SAFETY: plain signal syscalls on processes this test started.
     unsafe { libc::kill(gate.id() as i32, signum) };
     let status = gate.wait().unwrap();
     assert_eq!(status.code(), Some(128 + signum));
+    assert_group_gone(pid);
+}
+
+/// The pid a step wrote to `pidfile`, once it has.
+fn wait_for_pid(pidfile: &std::path::Path) -> i32 {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(text) = fs::read_to_string(pidfile)
+            && let Ok(pid) = text.trim().parse()
+        {
+            return pid;
+        }
+        assert!(Instant::now() < deadline, "the gate never started its step");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Check the process group `pid` led is gone, killing it if not.
+fn assert_group_gone(pid: i32) {
     let deadline = Instant::now() + Duration::from_secs(5);
     // A killed group's leader can linger as a zombie of the exited gate until init reaps it.
     while unsafe { libc::killpg(pid, 0) } == 0 && Instant::now() < deadline {
@@ -340,6 +349,33 @@ fn stop_gate_mid_step(signum: i32, jobs: &str) {
     let alive = unsafe { libc::killpg(pid, 0) } == 0;
     unsafe { libc::killpg(pid, libc::SIGKILL) };
     assert!(!alive, "the step's process group outlived the gate");
+}
+
+#[test]
+fn sigterm_reaches_a_nested_guards_godot_before_the_kill() {
+    let shim = Shim::new();
+    let guard = env!("CARGO_BIN_EXE_godot-guard");
+    let root = shim.repo.root.display();
+    shim.godot(0, &format!("echo $$ > \"{root}/godot.pid\"; exec sleep 30"));
+    shim.repo.write(
+        ".godot-guard.yml",
+        &format!(
+            "paths: [.]\ngate:\n  format: false\n  lint: false\n  import: false\n  analyzer: false\n  smoke: false\n  test-commands: ['\"{guard}\" run -- --headless']\n"
+        ),
+    );
+    let mut gate = Command::new(guard)
+        .args(["gate", "--jobs", "1"])
+        .current_dir(&shim.repo.root)
+        .env("GODOT", shim.repo.path(".bin/godot"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = wait_for_pid(&shim.repo.root.join("godot.pid"));
+    // SAFETY: a plain signal syscall on the process this test started.
+    unsafe { libc::kill(gate.id() as i32, libc::SIGTERM) };
+    assert_eq!(gate.wait().unwrap().code(), Some(128 + libc::SIGTERM));
+    assert_group_gone(pid);
 }
 
 #[test]

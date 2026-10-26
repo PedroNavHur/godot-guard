@@ -1,7 +1,8 @@
 //! Locate Godot, and run Godot with its diagnostics treated as failures.
 //!
 //! Every child `run_process` starts runs in its own session and is registered while it lives, so a stop
-//! (SIGINT or SIGTERM) kills each one's whole process group and the gate leaves no Godot or step running.
+//! (SIGINT or SIGTERM) signals each one's whole process group, SIGTERM first and SIGKILL after a grace
+//! period, so the gate leaves no Godot or step running, nested godot-guard runs included.
 //! The temporary directories made through `Scratch` are registered too, and the stop removes them.
 
 use std::collections::HashSet;
@@ -13,6 +14,8 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{LazyLock, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::error::{Failure, Result};
 
@@ -129,14 +132,13 @@ fn registry() -> std::sync::MutexGuard<'static, Registry> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Start `command` in its own session, registered; refused once a stop has begun.
+/// Start `command` in its own session, registered; once a stop has begun, wait for its exit instead.
 fn start(command: &mut Command) -> Result<Child> {
     // Held across the spawn, so a stop waits until the child is registered and then kills it.
     let mut registry = registry();
     if registry.stopped {
-        return Err(Failure::Tool(
-            "interrupted; not starting another process".into(),
-        ));
+        drop(registry);
+        await_stop();
     }
     // SAFETY: setsid is async-signal-safe and touches no state shared with the parent.
     unsafe {
@@ -158,36 +160,83 @@ fn start(command: &mut Command) -> Result<Child> {
 
 /// Forget `child`; if it is still running (its reader or its wait failed), kill it and reap it.
 fn finish(child: &mut Child) -> Result<()> {
-    registry().live.remove(&(child.id() as i32));
+    let stopped = {
+        let mut registry = registry();
+        registry.live.remove(&(child.id() as i32));
+        registry.stopped
+    };
     if matches!(child.try_wait(), Ok(None)) {
         // A child that cannot be killed fails the run rather than leaving it waiting on a live process.
         kill_session(child.id() as i32).map_err(|e| Failure::crash("killing a child", e))?;
         let _ = child.wait();
     }
+    if stopped {
+        await_stop();
+    }
     Ok(())
 }
 
-/// Refuse new children and kill the live ones, for a stop.
+/// Block until the stop exits the process: a child it ended is no result, and no new one starts.
+fn await_stop() -> ! {
+    loop {
+        thread::park();
+    }
+}
+
+/// How long a stop lets the children end after SIGTERM before it SIGKILLs them.
+const STOP_GRACE: Duration = Duration::from_secs(2);
+const STOP_POLL: Duration = Duration::from_millis(20);
+
+/// Refuse new children, SIGTERM the live ones, and SIGKILL those still alive after `STOP_GRACE`, for a stop.
+/// A nested godot-guard gets to kill its own Godot session before it exits.
 pub fn stop_children() {
-    let mut registry = registry();
-    registry.stopped = true;
-    for pid in &registry.live {
-        // The stop exits next; a child it cannot kill is left to the exit.
-        let _ = kill_session(*pid);
+    let sessions: Vec<i32> = {
+        let mut registry = registry();
+        registry.stopped = true;
+        registry.live.iter().copied().collect()
+    };
+    for &pid in &sessions {
+        // The stop exits next; a child it cannot signal is left to the kill below.
+        let _ = signal_session(pid, libc::SIGTERM);
+    }
+    wait_for_children();
+    let live = registry().live.clone();
+    for &pid in &sessions {
+        if live.contains(&pid) {
+            let _ = kill_session(pid);
+            continue;
+        }
+        // A reaped leader's group can keep members alive. Group only: its pid may now be another process's.
+        // SAFETY: a plain syscall; a gone group answers ESRCH.
+        unsafe { libc::killpg(pid, libc::SIGKILL) };
+    }
+}
+
+/// Wait until every registered child is finished, or `STOP_GRACE` passes. The lock is free between polls,
+/// so the threads waiting on the children can deregister them.
+fn wait_for_children() {
+    let deadline = Instant::now() + STOP_GRACE;
+    while Instant::now() < deadline && !registry().live.is_empty() {
+        thread::sleep(STOP_POLL);
     }
 }
 
 /// SIGKILL the session `pid` leads. A gone group is no error.
 pub fn kill_session(pid: i32) -> io::Result<()> {
+    signal_session(pid, libc::SIGKILL)
+}
+
+/// Send `signum` to the session `pid` leads. A gone group is no error.
+fn signal_session(pid: i32, signum: i32) -> io::Result<()> {
     // SAFETY: plain syscalls on a pid this process started and has not reaped.
-    if unsafe { libc::killpg(pid, libc::SIGKILL) } == 0 {
+    if unsafe { libc::killpg(pid, signum) } == 0 {
         return Ok(());
     }
     match io::Error::last_os_error().raw_os_error() {
         Some(libc::ESRCH) => Ok(()),
         // macOS answers EPERM, not ESRCH, once the group's only member is a zombie. EPERM can also mean a
-        // live group we may not signal, so kill the child itself: an unreaped child's pid is still ours.
-        Some(libc::EPERM) if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 => Ok(()),
+        // live group we may not signal, so signal the child itself: an unreaped child's pid is still ours.
+        Some(libc::EPERM) if unsafe { libc::kill(pid, signum) } == 0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
     }
 }

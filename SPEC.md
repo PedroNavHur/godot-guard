@@ -231,7 +231,8 @@ Run from anywhere inside the repo; the root is the nearest directory holding
     every platform; on macOS `HOME` names it too, because Godot's user
     directory there follows `HOME` (`CFFIXED_USER_HOME` and `XDG_DATA_HOME` do
     not move it). Serial runs keep the inherited environment.
-  - SIGINT and SIGTERM stop the gate: every child process session is killed,
+  - SIGINT and SIGTERM stop the gate: every child process session is sent
+    SIGTERM first, then SIGKILLed if still alive after a 2-second grace period,
     no new child starts, and the gate exits with 128 plus the signal number.
   - Sharded test entries: `{script: res://..., shards: N}` (N a whole number
     of at least 1) runs N processes, the I-th with `-- --shard=I/N` after its
