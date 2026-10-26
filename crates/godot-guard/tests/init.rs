@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Command;
 
 use common::Repo;
-use godot_guard::config::TestScript;
+use godot_guard::config::{Config, TestScript};
 use godot_guard::scaffold::TEMPLATES;
 
 fn init_repo() -> Repo {
@@ -51,6 +51,7 @@ fn scaffolds_everything_once() {
             shards: None
         }]
     );
+    assert!(repo.config().gate.test_commands.is_empty());
     let hook = root.join(".githooks/pre-commit");
     assert_ne!(fs::metadata(&hook).unwrap().permissions().mode() & 0o111, 0);
     assert!(read(root, ".githooks/pre-commit").contains("gate --fast --staged"));
@@ -77,6 +78,28 @@ fn scaffolds_everything_once() {
     );
     let again = repo.run(&["init"]);
     assert_eq!(again.stdout.matches("skipped").count(), 4, "{again:?}");
+}
+
+#[test]
+fn scaffolded_config_matches_the_loader_defaults() {
+    let repo = init_repo();
+    assert_eq!(repo.run(&["init"]).status, 0);
+    let scaffolded = repo.config();
+    let mut defaults = Config::new(repo.root.clone());
+    // The one deliberate difference: init lists the repo's run_tests.gd under gate.tests.
+    defaults.gate.tests = scaffolded.gate.tests.clone();
+    // Pattern and Gate have no PartialEq, so compare the Debug form of each key.
+    let debug = |config: &Config| {
+        format!(
+            "{:?} {:?} {:?}",
+            config.exclude, config.boundaries, config.gate
+        )
+    };
+    assert_eq!(scaffolded.paths, defaults.paths);
+    assert_eq!(scaffolded.limits, defaults.limits);
+    assert_eq!(scaffolded.rules, defaults.rules);
+    assert_eq!(scaffolded.relaxed_warnings, defaults.relaxed_warnings);
+    assert_eq!(debug(&scaffolded), debug(&defaults));
 }
 
 #[test]

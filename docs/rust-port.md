@@ -60,6 +60,18 @@ Allowed deviations:
   0.4.0 scaffolds the pip requirement. The port's `quality.yml` is
   `crates/godot-guard/templates/quality.yml`; the Python package's templates
   still serve 0.4.0.
+- Additions since 0.5.0 have no 0.4.0 counterpart: `complexity --json`
+  (0.6.0) and `gate.test-commands` (0.7.0; 0.4.0 rejects the key). The
+  config `init` writes is `crates/godot-guard/templates/godot-guard.yml`, so it
+  can list such keys.
+- A stop (SIGINT or SIGTERM) sends SIGTERM to each child's session and
+  waits for each signalled process group to empty, up to a 2-second grace
+  period plus a margin of one second per nesting level left (5 seconds at the
+  top, one second less per level, a 2-second floor; `GODOT_GUARD_DEPTH` counts
+  the levels), then SIGKILLs the rest; 0.4.0 kills at once.
+  A `test-commands` entry that runs `godot-guard run` then lets the nested
+  guard kill its own Godot session instead of orphaning it. Meanwhile a run
+  whose child ended, or that would start one, waits for the stop's exit.
 
 Config files (`.gdlintrc`, `gdformatrc`) are read by one PyYAML 1.1 port in
 `pycompat::yaml`, which refuses merge keys (`<<`) and the tags PyYAML's

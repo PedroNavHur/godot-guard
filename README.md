@@ -31,12 +31,12 @@ no Python. Download a release build (Linux x86_64 or macOS arm64) onto PATH:
 
 ```
 curl --fail --location \
-  https://github.com/PedroNavHur/godot-guard/releases/download/v0.6.0/godot-guard-aarch64-apple-darwin.tar.gz \
+  https://github.com/PedroNavHur/godot-guard/releases/download/v0.7.0/godot-guard-aarch64-apple-darwin.tar.gz \
   | tar --extract --gzip --directory ~/.local/bin
 ```
 
 On Linux use `godot-guard-x86_64-unknown-linux-gnu.tar.gz`. Elsewhere, build
-it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.6.0 godot-guard`.
+it: `cargo install --locked --git https://github.com/PedroNavHur/godot-guard --tag v0.7.0 godot-guard`.
 Godot is found through `$GODOT`, `godot` or `godot4` on PATH, or
 `/Applications/Godot.app`.
 
@@ -75,8 +75,14 @@ edits to them neither hide nor cause failures). Symlinked scripts are not
 supported there: a staged one fails the gate, so commit the real file. The
 Resource exclusion reads the other scripts in the index from the working tree,
 and the staged scripts' declarations win. `gate` is the pre-push hook and CI:
-format, lint, check, extra steps, editor import, analyzer, tests, and a smoke
-run, timed per step.
+format, lint, check, extra steps, editor import, analyzer, tests, test
+commands, and a smoke run, timed per step.
+
+`gate.steps` and `gate.test-commands` are shell commands, each run as
+`/bin/sh -c COMMAND` from the repository root and named by the command. `steps`
+run before Godot; `test-commands` run after the import and the tests, before
+smoke, for checks that need the imported project, such as a script that calls
+`godot-guard run -- --headless ...`. `gate --fast` skips both.
 
 Output lines are `path:line: message (rule)`.
 
@@ -90,10 +96,12 @@ three phases, each on at most that many workers:
 
 1. format, lint, check, and the `steps` commands;
 2. the editor import, alone;
-3. the analyzer, every test process (shards included), and smoke.
+3. the analyzer, every test process (shards included), the `test-commands`,
+   and smoke.
 
-Each Godot process in a parallel phase gets a fresh user-data directory, removed
-afterwards, so concurrent runs do not share state. A step's output is held and
+Each step in the third phase gets a fresh user-data directory (`XDG_DATA_HOME`,
+and `HOME` on macOS), removed afterwards, so concurrent Godot runs, including
+those a test command starts, do not share state. A step's output is held and
 printed as one block when it finishes, framed by `== NAME` and then
 `== NAME passed in Xs` or `== NAME failed after Xs`. On the first failure in a
 phase no new step starts; running ones finish and print; every failed step is
@@ -188,6 +196,7 @@ gate:
   analyzer: true
   jobs: 1                    # workers: a whole number, or auto
   tests: []                  # res:// scripts, or {script: res://..., shards: N}
+  test-commands: []          # shell commands run with the tests, after the import
   smoke: [--quit-after, "3"] # [] or false skips it
 ```
 

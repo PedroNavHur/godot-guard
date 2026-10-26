@@ -290,6 +290,24 @@ fn bad_test_entries_are_errors() {
 }
 
 #[test]
+fn test_commands_are_a_list_of_strings() {
+    assert!(repo(&[], None).config().gate.test_commands.is_empty());
+    let text = "gate:\n  test-commands: ['sh a.sh', 'sh b.sh']\n";
+    let config = repo(&[], Some(text)).config();
+    assert_eq!(config.gate.test_commands, ["sh a.sh", "sh b.sh"]);
+    for text in [
+        "gate:\n  test-commands: sh a.sh\n",
+        "gate:\n  test-commands: [sh a.sh, 1]\n",
+    ] {
+        assert_eq!(
+            error_of(text),
+            ".godot-guard.yml: gate.test-commands must be a list of strings",
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
 fn smoke_arguments_become_strings() {
     let config = repo(&[], Some("gate: {smoke: [--quit-after, 3, true]}\n")).config();
     assert_eq!(config.gate.smoke, ["--quit-after", "3", "True"]);

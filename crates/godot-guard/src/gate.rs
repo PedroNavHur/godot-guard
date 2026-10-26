@@ -13,7 +13,7 @@ use crate::schedule::{Out, Phase, Step, run_steps};
 use crate::scripts::Scripts;
 use crate::snapshot::{indexed, snapshot, staged};
 use crate::toolkit;
-use crate::tools::{self, Echo, Scratch, run_godot, run_process};
+use crate::tools::{self, Echo, Env, Scratch, run_godot, run_process};
 
 pub const ANALYZER: &str = include_str!("../../../src/godot_guard/data/analyze_scripts.gd");
 
@@ -46,7 +46,8 @@ pub fn res_path(path: &str) -> String {
     }
 }
 
-/// Godot steps in order, as (name, args after --headless --path ROOT).
+/// Godot steps in order up to the tests, as (name, args after --headless --path ROOT); smoke follows the
+/// test commands.
 pub fn godot_steps(config: &Config, analyzer: &Path) -> Vec<(String, Vec<String>)> {
     let gate = &config.gate;
     let mut steps = Vec::new();
@@ -68,9 +69,6 @@ pub fn godot_steps(config: &Config, analyzer: &Path) -> Vec<(String, Vec<String>
         steps.push(("analyzer".into(), args));
     }
     steps.extend(gate.tests.iter().flat_map(script_steps));
-    if !gate.smoke.is_empty() {
-        steps.push(("smoke".into(), gate.smoke.clone()));
-    }
     steps
 }
 
@@ -150,31 +148,47 @@ pub fn steps_for<'a>(plan: &'a Plan<'a>, files: &'a [String], depth: Depth) -> V
         return steps;
     }
     for command in &gate.steps {
-        let shell = move |echo: Option<Echo>, _: &_| {
-            let argv = ["/bin/sh".into(), "-c".into(), OsString::from(command)];
-            run_process(&argv, Some(&plan.config.root), &None, echo)
-        };
-        steps.push(Step::new(command.clone(), Phase::Prepare, Box::new(shell)));
+        steps.push(shell_step(plan, command, Phase::Prepare));
     }
     for (name, args) in godot_steps(plan.config, plan.analyzer) {
-        let phase = if name == "import" {
-            Phase::Import
-        } else {
-            Phase::Test
-        };
-        let mut argv: Vec<OsString> = vec![
-            "--headless".into(),
-            "--path".into(),
-            plan.config.root.clone().into(),
-        ];
-        argv.extend(args.into_iter().map(OsString::from));
-        steps.push(Step::godot(
-            name,
-            phase,
-            Box::new(move |echo, env| run_godot(&argv, None, env, echo)),
-        ));
+        steps.push(godot_step(plan, name, args));
+    }
+    for command in &gate.test_commands {
+        steps.push(shell_step(plan, command, Phase::Test));
+    }
+    if !gate.smoke.is_empty() {
+        steps.push(godot_step(plan, "smoke".into(), gate.smoke.clone()));
     }
     steps
+}
+
+/// `/bin/sh -c COMMAND` from the repository root, named by the command.
+fn shell_step<'a>(plan: &'a Plan<'a>, command: &'a str, phase: Phase) -> Step<'a> {
+    let shell = move |echo: Option<Echo>, env: &Env| {
+        let argv = ["/bin/sh".into(), "-c".into(), OsString::from(command)];
+        run_process(&argv, Some(&plan.config.root), env, echo)
+    };
+    Step::new(command, phase, Box::new(shell))
+}
+
+/// Godot with `--headless --path ROOT` and `args`; the import alone is its own phase.
+fn godot_step<'a>(plan: &'a Plan<'a>, name: String, args: Vec<String>) -> Step<'a> {
+    let phase = if name == "import" {
+        Phase::Import
+    } else {
+        Phase::Test
+    };
+    let mut argv: Vec<OsString> = vec![
+        "--headless".into(),
+        "--path".into(),
+        plan.config.root.clone().into(),
+    ];
+    argv.extend(args.into_iter().map(OsString::from));
+    Step::new(
+        name,
+        phase,
+        Box::new(move |echo, env| run_godot(&argv, None, env, echo)),
+    )
 }
 
 fn check_step(plan: &Plan, echo: Option<Echo>) -> Result<i32> {

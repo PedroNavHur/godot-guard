@@ -19,14 +19,14 @@ pub enum Phase {
     Prepare,
     /// Godot's import, alone
     Import,
-    /// the analyzer, every test process, and smoke
+    /// the analyzer, every test process, the gate.test-commands commands, and smoke
     Test,
 }
 
 pub const PHASES: [Phase; 3] = [Phase::Prepare, Phase::Import, Phase::Test];
 
-/// A step's work: given an echo (None writes to the terminal) and None or a Godot process's environment,
-/// its status.
+/// A step's work: given an echo (None writes to the terminal) and None or a TEST step's environment
+/// (Godot or test command), its status.
 pub type Action<'a> = Box<dyn Fn(Option<Echo>, &Env) -> Result<i32> + Sync + 'a>;
 
 /// Where the gate's own lines go: stdout, or a test's buffer. A failed write stops the gate.
@@ -36,7 +36,6 @@ pub struct Step<'a> {
     pub name: String,
     pub phase: Phase,
     pub action: Action<'a>,
-    pub godot: bool,
 }
 
 impl<'a> Step<'a> {
@@ -45,16 +44,6 @@ impl<'a> Step<'a> {
             name: name.into(),
             phase,
             action,
-            godot: false,
-        }
-    }
-
-    pub fn godot(name: impl Into<String>, phase: Phase, action: Action<'a>) -> Step<'a> {
-        Step {
-            name: name.into(),
-            phase,
-            action,
-            godot: true,
         }
     }
 }
@@ -242,9 +231,11 @@ fn run_step(step: &Step, mut echo: Option<Echo>, env: &Env, out: &Out) -> Result
     }
 }
 
-/// For a Godot test step, an environment with a fresh user-data dir, removed on drop. Other steps get none.
+/// For a TEST step, Godot or a test command, an environment with a fresh user-data dir, removed on drop.
+/// Other steps get none.
 ///
-/// Only TEST steps run beside each other; IMPORT runs alone and keeps the inherited environment.
+/// TEST steps run beside each other on the imported project; IMPORT runs alone and keeps the inherited
+/// environment, and PREPARE runs no Godot.
 pub struct Isolation {
     _temp: Option<Scratch>,
     env: Env,
@@ -252,7 +243,7 @@ pub struct Isolation {
 
 impl Isolation {
     pub fn new(step: &Step) -> Result<Isolation> {
-        if !(step.godot && step.phase == Phase::Test) {
+        if step.phase != Phase::Test {
             return Ok(Isolation {
                 _temp: None,
                 env: None,
