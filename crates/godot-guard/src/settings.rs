@@ -32,8 +32,16 @@ const TOP_KEYS: [&str; 7] = [
     "boundaries",
     "gate",
 ];
-const GATE_KEYS: [&str; 8] = [
-    "format", "lint", "steps", "import", "analyzer", "tests", "smoke", "jobs",
+const GATE_KEYS: [&str; 9] = [
+    "format",
+    "lint",
+    "steps",
+    "import",
+    "analyzer",
+    "tests",
+    "test-commands",
+    "smoke",
+    "jobs",
 ];
 const BOUNDARY_KEYS: [&str; 4] = ["name", "paths", "forbid", "message"];
 const TEST_KEYS: [&str; 2] = ["script", "shards"];
@@ -326,6 +334,9 @@ fn validate_gate(config: &mut Config, given: &[(&str, &Value)]) -> Result<()> {
     }
     if let Some(tests) = value("tests") {
         gate.tests = gate_tests(tests)?;
+    }
+    if let Some(commands) = value("test-commands") {
+        gate.test_commands = string_list(commands, "gate.test-commands")?;
     }
     if let Some(smoke) = value("smoke") {
         gate.smoke = gate_smoke(smoke)?;

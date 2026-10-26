@@ -371,3 +371,82 @@ fn the_analyzer_under_a_real_godot() {
         "{run:?}"
     );
 }
+
+/// A command that needs `$XDG_DATA_HOME` to be a directory and logs it.
+const TEST_COMMAND: &str =
+    r#"test -d "$XDG_DATA_HOME" && echo "command $XDG_DATA_HOME" >> .bin/calls.log"#;
+
+/// The gate with a logging `steps` entry, the import, one test script, TEST_COMMAND, and `smoke`, run with
+/// `.bin` as the inherited `XDG_DATA_HOME`.
+fn test_command_gate(args: &[&str], smoke: &str) -> (Shim, common::Run, String) {
+    let shim = Shim::new();
+    shim.repo.write(
+        ".godot-guard.yml",
+        &format!(
+            "gate:\n  format: false\n  lint: false\n  analyzer: false\n  smoke: {smoke}\n  \
+             steps: ['echo \"step $XDG_DATA_HOME\" >> .bin/calls.log']\n  \
+             tests: [res://tests/run_tests.gd]\n  test-commands: ['{TEST_COMMAND}']\n"
+        ),
+    );
+    let (godot, inherited) = (shim.repo.path(".bin/godot"), shim.repo.path(".bin"));
+    let env = [
+        ("GODOT", godot.as_str()),
+        ("XDG_DATA_HOME", inherited.as_str()),
+    ];
+    let run = shim.repo.run_in(&shim.repo.root, args, &env);
+    (shim, run, inherited)
+}
+
+#[test]
+fn serial_test_commands_run_after_the_tests_and_before_smoke_unisolated() {
+    let (shim, run, inherited) = test_command_gate(&["gate", "--jobs", "1"], "[--quit-after, '3']");
+    assert_eq!(run.status, 0, "{run:?}");
+    let root = shim.repo.root.display();
+    assert_eq!(
+        shim.calls(),
+        [
+            format!("step {inherited}"),
+            format!("godot --headless --path {root} --editor --quit"),
+            format!("godot --headless --path {root} --script res://tests/run_tests.gd"),
+            format!("command {inherited}"),
+            format!("godot --headless --path {root} --quit-after 3"),
+        ]
+    );
+    assert!(
+        run.stdout
+            .contains(&format!("== {TEST_COMMAND} passed in ")),
+        "{run:?}"
+    );
+}
+
+#[test]
+fn parallel_test_commands_run_after_the_import_with_a_fresh_data_dir() {
+    let (shim, run, inherited) = test_command_gate(&["gate", "--jobs", "2"], "false");
+    assert_eq!(run.status, 0, "{run:?}");
+    let calls = shim.calls();
+    assert_eq!(calls.len(), 4, "{calls:?}");
+    assert_eq!(calls[0], format!("step {inherited}"));
+    assert!(calls[1].ends_with(" --editor --quit"), "{calls:?}");
+    let command = calls[2..]
+        .iter()
+        .find_map(|call| call.strip_prefix("command "))
+        .unwrap_or_else(|| panic!("{calls:?}"));
+    let data = Path::new(command);
+    assert_ne!(command, inherited);
+    assert!(
+        data.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("godot-guard-"),
+        "{command}"
+    );
+    assert!(!data.exists(), "the data dir outlived the step");
+}
+
+#[test]
+fn fast_gate_skips_test_commands() {
+    let (shim, run, _) = test_command_gate(&["gate", "--fast"], "false");
+    assert_eq!(run.status, 0, "{run:?}");
+    assert!(shim.calls().is_empty(), "{:?}", shim.calls());
+    assert!(!run.stdout.contains(TEST_COMMAND), "{run:?}");
+}

@@ -19,7 +19,7 @@ pub enum Phase {
     Prepare,
     /// Godot's import, alone
     Import,
-    /// the analyzer, every test process, and smoke
+    /// the analyzer, every test process, the gate.test-commands commands, and smoke
     Test,
 }
 
@@ -231,7 +231,7 @@ fn run_step(step: &Step, mut echo: Option<Echo>, env: &Env, out: &Out) -> Result
     }
 }
 
-/// For a TEST step, an environment with a fresh user-data dir, removed on drop.
+/// For a TEST step, Godot or a test command, an environment with a fresh user-data dir, removed on drop.
 /// Other steps get none.
 ///
 /// TEST steps run beside each other on the imported project; IMPORT runs alone and keeps the inherited

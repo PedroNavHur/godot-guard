@@ -118,6 +118,8 @@ pub struct Gate {
     pub import: bool,
     pub analyzer: bool,
     pub tests: Vec<TestScript>,
+    /// Shell commands run from the root in the TEST phase, after the tests and before smoke.
+    pub test_commands: Vec<String>,
     /// Godot's arguments for the smoke run; empty (`false` or `[]`) skips it.
     pub smoke: Vec<String>,
     pub jobs: Jobs,
@@ -170,6 +172,7 @@ impl Config {
                 import: true,
                 analyzer: true,
                 tests: Vec::new(),
+                test_commands: Vec::new(),
                 smoke: vec!["--quit-after".into(), "3".into()],
                 jobs: Jobs::Count(1),
             },

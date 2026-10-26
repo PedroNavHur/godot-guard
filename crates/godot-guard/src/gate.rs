@@ -46,7 +46,8 @@ pub fn res_path(path: &str) -> String {
     }
 }
 
-/// Godot steps in order up to the tests, as (name, args after --headless --path ROOT); smoke follows.
+/// Godot steps in order up to the tests, as (name, args after --headless --path ROOT); smoke follows the
+/// test commands.
 pub fn godot_steps(config: &Config, analyzer: &Path) -> Vec<(String, Vec<String>)> {
     let gate = &config.gate;
     let mut steps = Vec::new();
@@ -151,6 +152,9 @@ pub fn steps_for<'a>(plan: &'a Plan<'a>, files: &'a [String], depth: Depth) -> V
     }
     for (name, args) in godot_steps(plan.config, plan.analyzer) {
         steps.push(godot_step(plan, name, args));
+    }
+    for command in &gate.test_commands {
+        steps.push(shell_step(plan, command, Phase::Test));
     }
     if !gate.smoke.is_empty() {
         steps.push(godot_step(plan, "smoke".into(), gate.smoke.clone()));
